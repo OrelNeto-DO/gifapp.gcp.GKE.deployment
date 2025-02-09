@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mysql
+  labels:
+    app: mysql
+spec:
+  replicas: {{ .Values.mysql.replicas }}
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      initContainers:
+        - name: remove-lost-found
+          image: busybox
+          command: ["rm", "-rf", "/var/lib/mysql/lost+found"]
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+      containers:
+        - name: mysql
+          image: "{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.mysql.service.port }}
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-mysql-secrets
+                  key: DB_PASSWORD
+            - name: MYSQL_ROOT_HOST
+              value: "{{ .Values.database.rootHost }}"
+            - name: MYSQL_DATABASE
+              value: "{{ .Values.database.name }}"
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-mysql-pvc
+        - name: init-sql
+          configMap:
+            name: {{ .Release.Name }}-mysql-init-sql

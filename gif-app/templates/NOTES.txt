@@ -1,0 +1,27 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+To get the Flask application URL:
+
+{{- if contains "ClusterIP" .Values.flask.service.type }}
+  kubectl port-forward svc/{{ .Release.Name }}-flask {{ .Values.flask.service.port }}:{{ .Values.flask.service.port }}
+  
+  Then visit: http://localhost:{{ .Values.flask.service.port }}
+{{- else if contains "NodePort" .Values.flask.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ .Release.Name }}-flask)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  
+  Then visit: http://$NODE_IP:$NODE_PORT
+{{- end }}
+
+To check the status of your pods:
+  kubectl get pods
+
+To check your services:
+  kubectl get svc
+
+MySQL database can be accessed via port {{ .Values.mysql.service.port }} on the following DNS name from within your cluster:
+  {{ .Release.Name }}-mysql.{{ .Release.Namespace }}.svc.cluster.local
+
+Happy GIFing! í¾‰

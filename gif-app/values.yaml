@@ -1,0 +1,35 @@
+# Application Configuration
+flask:
+  image:
+    repository: orelneto/flaskapp_with_db_motogpgif
+    tag: "1.00"
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 5000
+  replicas: 1
+
+mysql:
+  image:
+    repository: mysql
+    tag: "5.7"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3306
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: "hostpath"
+    size: 1Gi
+  
+# Database Configuration
+database:
+  name: mydatabase
+  user: root
+  password: rootpassword
+  rootHost: "%" # שים לב לשינוי כאן - הוספנו מרכאות
+
+# ConfigMaps and Init Scripts
+initScript:
+  enabled: true
