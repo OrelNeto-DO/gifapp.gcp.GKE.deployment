@@ -1,4 +1,15 @@
-# Terraform
+# Helm
+charts/*
+*.tgz
+*.chart
+.helm/
+
+# Kubernetes & Helm Secrets
+**/secrets/*
+*values-secret.yaml
+*-values.yaml
+
+# Terraform 
 .terraform/
 *.tfstate
 *.tfstate.*
@@ -22,6 +33,8 @@ ENV/
 # IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
@@ -35,3 +48,6 @@ node_modules/
 
 # Misc
 *.log
+*.tmp
+*.cache
+.env

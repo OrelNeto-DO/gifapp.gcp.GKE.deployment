@@ -1,29 +1,54 @@
-# System and local cache files
+# Version Control
+.git/
+.gitignore
+.gitattributes
+
+# Helm
+gif-app/
+charts/
+*.tgz
+*.chart
+.helm/
+
+# Kubernetes
+k8s/
+*.yaml
+!app.yaml
+
+# Python
 __pycache__/
-*.pyc
-*.pyo
-.DS_Store
+*.py[cod]
+*$py.class
+.Python
+venv/
+ENV/
+.env
+
+# Development and IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+.editorconfig
 
-# Virtual environment
-venv/
-.env/
-
-# Unnecessary local files for Docker build
-.git/
-.gitignore
-docker-compose.override.yml
-Dockerfile.*
-
-# Kubernetes-specific files
-k8s/secrets.yaml
-k8s/configmap.yaml
-k8s/mysql-init-configmap.yaml
-
-# Logs and temporary files
+# Build and Test
 *.log
 *.tmp
 *.cache
-*.out
+.coverage
+htmlcov/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Docker
+Dockerfile*
+docker-compose*
+.docker/
+.dockerignore
+
+# OS Generated
+.DS_Store
+Thumbs.db
