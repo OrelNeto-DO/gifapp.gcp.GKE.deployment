@@ -7,6 +7,14 @@ data:
     global:
       scrape_interval: 15s
     scrape_configs:
+      # Node Exporter metrics
+      - job_name: 'node'
+        static_configs:
+          - targets: ['localhost:9100']
+        metrics_path: '/metrics'
+      
+      # Flask application metrics
       - job_name: 'flask-app'
         static_configs:
           - targets: ['localhost:5000']
+        metrics_path: '/metrics'

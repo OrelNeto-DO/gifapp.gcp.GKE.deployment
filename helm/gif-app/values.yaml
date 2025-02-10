@@ -2,7 +2,7 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: "2.0"
+    tag: "2.01"
     pullPolicy: IfNotPresent
   service:
     type: NodePort
@@ -36,6 +36,10 @@ initScript:
 
 # Monitoring Configuration
 monitoring:
+  nodeExporter:
+    image:
+      repository: prom/node-exporter
+      tag: v1.3.1
   prometheus:
     image:
       repository: prom/prometheus
@@ -49,3 +53,7 @@ monitoring:
     service:
       type: NodePort
     adminPassword: admin
+    persistence:
+      enabled: true
+      storageClass: "hostpath"
+      size: 1Gi
