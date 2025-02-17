@@ -5,10 +5,10 @@ metadata:
   labels:
     app: flask-app
 spec:
-  type: NodePort
+  type: {{ .Values.flask.service.type }}
   ports:
-    - port: 80
+    - port: {{ .Values.flask.service.port }}
       targetPort: {{ .Values.flask.service.port }}
-      protocol: TCP
+      name: http
   selector:
     app: flask-app

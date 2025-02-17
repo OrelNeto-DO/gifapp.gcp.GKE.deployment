@@ -4,13 +4,17 @@ import os
 import random
 from dotenv import load_dotenv
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_flask_exporter import PrometheusMetrics  # הוספת החבילה
 
 # Load environment variables from the .env file
 load_dotenv()
 
 app = Flask(__name__)
 
-# Prometheus metrics
+# אתחול PrometheusMetrics
+metrics = PrometheusMetrics(app)
+
+# Prometheus metrics (אלו עדיין קיימות אם תרצה להוסיף מטריקות נוספות)
 VISITORS = Counter('flask_app_visitors_total', 'Number of visitors to the website')
 
 # Read environment variables
