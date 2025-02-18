@@ -2,7 +2,7 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: "1.00"
+    tag: "1.01"
     pullPolicy: IfNotPresent
   service:
     type: NodePort

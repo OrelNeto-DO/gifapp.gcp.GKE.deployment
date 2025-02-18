@@ -3,3 +3,5 @@ Werkzeug==2.0.3
 SQLAlchemy==1.4.31
 PyMySQL==1.0.2
 python-dotenv==0.21.0
+prometheus-flask-exporter==0.22.3
+prometheus-client==0.17.1
