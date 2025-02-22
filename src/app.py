@@ -1,10 +1,10 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, Response
 from sqlalchemy import create_engine, text
 import os
 import random
 from dotenv import load_dotenv
 from prometheus_flask_exporter import PrometheusMetrics
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -26,6 +26,10 @@ DB_NAME = os.getenv("DB_NAME", "mydatabase")
 # MySQL connection string
 DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 engine = create_engine(DB_URL)
+
+@app.route("/metrics")
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
 @app.route("/")
 def index():
