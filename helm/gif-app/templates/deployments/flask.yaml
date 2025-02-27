@@ -17,6 +17,8 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "5000"
         prometheus.io/path: "/metrics"
+        loki.grafana.com/scrape: "true"
+        loki.grafana.com/port: "5000"
     spec:
       containers:
         - name: flask-app

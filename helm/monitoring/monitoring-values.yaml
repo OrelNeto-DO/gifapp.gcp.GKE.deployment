@@ -8,6 +8,33 @@ grafana:
     enabled: true
     storageClassName: "hostpath"
     size: 1Gi
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Loki
+          type: loki
+          url: http://loki:3100
+          access: proxy
+          isDefault: false
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      loki-logs:
+        gnetId: 12611
+        revision: 1
+        datasource: Loki
 
 prometheus:
   prometheusSpec:
