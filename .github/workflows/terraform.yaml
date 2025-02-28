@@ -1,0 +1,80 @@
+name: Terraform AKS Deployment
+
+on:
+  push:
+    branches: [ main, adding-terraform ]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yml'
+  workflow_dispatch:  # מאפשר הפעלה ידנית
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCESS_KEY }}
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.6.0
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+
+    - name: Terraform Format
+      working-directory: ./terraform
+      run: terraform fmt -check || true
+
+    - name: Terraform Plan
+      working-directory: ./terraform
+      run: terraform plan -out=tfplan
+      
+    - name: Terraform Apply
+      working-directory: ./terraform
+      run: terraform apply -auto-approve tfplan
+    
+    - name: Get AKS Credentials
+      run: |
+        # התקנת Azure CLI
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        
+        # כניסה ל-Azure
+        az login --service-principal \
+          --username ${{ secrets.AZURE_CLIENT_ID }} \
+          --password ${{ secrets.AZURE_CLIENT_SECRET }} \
+          --tenant ${{ secrets.AZURE_TENANT_ID }}
+        
+        # קבלת שם הקלאסטר וקבוצת המשאבים
+        CLUSTER_NAME=$(terraform -chdir=./terraform output -raw cluster_name)
+        RESOURCE_GROUP=$(terraform -chdir=./terraform output -raw resource_group_name)
+        
+        # שמירת הגדרות הקוברנטיס
+        mkdir -p ~/.kube
+        az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --file kubeconfig.yaml
+      
+    - name: Upload kubeconfig as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: kubeconfig
+        path: kubeconfig.yaml
+        retention-days: 1
+    
+    - name: Trigger CI Pipeline
+      if: success()
+      uses: peter-evans/repository-dispatch@v2
+      with:
+        token: ${{ secrets.GH_PAT }}
+        event-type: start-ci-pipeline
