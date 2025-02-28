@@ -73,7 +73,7 @@ jobs:
     
     - name: Trigger CI Pipeline
       if: success()
-      uses: peter-evans/repository-dispatch@v2
+      uses: peter-evans/repository-dispatch@v3.1.0
       with:
         token: ${{ secrets.GH_PAT }}
         event-type: start-ci-pipeline
