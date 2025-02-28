@@ -65,7 +65,7 @@ jobs:
         az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --file kubeconfig.yaml
       
     - name: Upload kubeconfig as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v2
       with:
         name: kubeconfig
         path: kubeconfig.yaml
