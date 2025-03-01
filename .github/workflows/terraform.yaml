@@ -3,9 +3,8 @@ name: Terraform AKS Deployment
 on:
   push:
     branches: [ main, adding-terraform ]
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/terraform.yml'
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:  # מאפשר הפעלה ידנית
 
 jobs:
@@ -56,11 +55,9 @@ jobs:
           --password ${{ secrets.AZURE_CLIENT_SECRET }} \
           --tenant ${{ secrets.AZURE_TENANT_ID }}
         
-        # קבלת שם הקלאסטר וקבוצת המשאבים
-        cd ./terraform
-        CLUSTER_NAME=$(terraform output -raw cluster_name)
-        RESOURCE_GROUP=$(terraform output -raw resource_group_name)
-        cd ..
+        # שימוש בערכים קבועים במקום terraform output
+        RESOURCE_GROUP="orel-neto-project"
+        CLUSTER_NAME="gifapp-aks"
         
         # שמירת הגדרות הקוברנטיס
         mkdir -p ~/.kube
