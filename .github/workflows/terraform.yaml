@@ -63,18 +63,12 @@ jobs:
         # שמירת הגדרות הקוברנטיס
         mkdir -p ~/.kube
         az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --file kubeconfig.yaml
-      
-    - name: Upload kubeconfig as artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: kubeconfig
-        path: kubeconfig.yaml
-        retention-days: 1
+        
+        echo "Kubeconfig saved to kubeconfig.yaml"
     
     - name: Trigger CI Pipeline
       if: success()
-      uses: peter-evans/repository-dispatch@v3.1.0
+      uses: peter-evans/repository-dispatch@v2
       with:
         token: ${{ secrets.GH_PAT }}
         event-type: start-ci-pipeline
-
