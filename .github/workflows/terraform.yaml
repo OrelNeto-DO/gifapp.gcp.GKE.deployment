@@ -57,8 +57,10 @@ jobs:
           --tenant ${{ secrets.AZURE_TENANT_ID }}
         
         # קבלת שם הקלאסטר וקבוצת המשאבים
-        CLUSTER_NAME=$(terraform -chdir=./terraform output -raw cluster_name)
-        RESOURCE_GROUP=$(terraform -chdir=./terraform output -raw resource_group_name)
+        cd ./terraform
+        CLUSTER_NAME=$(terraform output -raw cluster_name)
+        RESOURCE_GROUP=$(terraform output -raw resource_group_name)
+        cd ..
         
         # שמירת הגדרות הקוברנטיס
         mkdir -p ~/.kube
