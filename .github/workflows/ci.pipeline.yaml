@@ -62,7 +62,7 @@ jobs:
 
     - name: Setup and Test Application
       env:
-        DB_USER: ${{ secrets.DB_USER }}
+        DB_USER: "gifuser"  # קבוע לטובת הבדיקות
         DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         DB_HOST: mysql
         DB_PORT: ${{ secrets.DB_PORT }}
@@ -176,11 +176,16 @@ jobs:
     - name: Update Helm Chart Version
       run: |
         echo "Updating Helm chart version to ${{ env.VERSION }}"
-        sed -i "s/version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
-        sed -i "s/appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
+        # עדכון בפורמט המדויק של הקובץ
+        sed -i "s/^version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
+        sed -i "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
         
-        # Update image tag in values.yaml
+        # עדכון התג בקובץ values.yaml
         sed -i "s/tag: .*/tag: ${{ env.VERSION }}/" ./helm/gif-app/values.yaml
+        
+        # הדפסת התוכן לאחר העדכון לצורך דיבוג
+        echo "Contents of Chart.yaml after update:"
+        cat ./helm/gif-app/Chart.yaml
         
     - name: Setup Helm
       uses: azure/setup-helm@v3
@@ -213,6 +218,10 @@ jobs:
         # Update the index
         cd helm-repo
         helm repo index . --url https://OrelNeto-DO.github.io/helm-charts
+        
+        # Debug: Show contents of the index.yaml
+        echo "Contents of index.yaml after update:"
+        cat index.yaml
         
         # Commit and push changes
         git add .
