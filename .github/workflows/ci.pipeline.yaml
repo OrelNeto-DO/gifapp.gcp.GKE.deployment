@@ -186,3 +186,4 @@ jobs:
         token: ${{ secrets.GH_PAT }}
         event-type: start-cd-pipeline
         client-payload: '{"version": "${{ env.VERSION }}"}'
+        
