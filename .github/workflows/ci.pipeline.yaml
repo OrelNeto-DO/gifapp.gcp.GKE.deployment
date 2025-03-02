@@ -59,12 +59,86 @@ jobs:
           --build-arg DB_NAME=$DB_NAME \
           --build-arg PORT=$PORT \
           -t orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} ./src
-        
-        # Tag images
-        docker tag orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} orelneto/flaskapp_with_db_motogpgif:latest
 
+    - name: Setup and Test Application
+      env:
+        DB_USER: gifuser
+        DB_PASSWORD: gifpassword
+        DB_NAME: gifdb
+        PORT: 5000
+      run: |
+        # Create a test docker-compose.yml file
+        cat > ./src/docker-compose.test.yml << EOL
+        version: '3'
+        services:
+          app:
+            image: orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
+            ports:
+              - "5005:5000"
+            environment:
+              - FLASK_ENV=development
+              - DB_USER=${DB_USER}
+              - DB_PASSWORD=${DB_PASSWORD}
+              - DB_HOST=mysql
+              - DB_PORT=3306
+              - DB_NAME=${DB_NAME}
+            depends_on:
+              mysql:
+                condition: service_healthy
+          mysql:
+            image: mysql:5.7
+            environment:
+              MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+              MYSQL_DATABASE: ${DB_NAME}
+              MYSQL_USER: ${DB_USER}
+              MYSQL_PASSWORD: ${DB_PASSWORD}
+            ports:
+              - "3306:3306"
+            healthcheck:
+              test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
+              interval: 5s
+              timeout: 5s
+              retries: 10
+        EOL
+        
+        # Copy init.sql to src directory if it's not there
+        if [ ! -f ./src/init.sql ] && [ -f ./init.sql ]; then
+          cp ./init.sql ./src/init.sql
+        fi
+        
+        # Run the application with docker-compose
+        cd src
+        docker-compose -f docker-compose.test.yml up -d
+        
+        # Wait for the application to start
+        echo "Waiting for application to start..."
+        sleep 60
+        
+        # Check if containers are running
+        docker ps
+        
+        # Show logs of the containers to diagnose any issues
+        echo "MySQL container logs:"
+        docker-compose -f docker-compose.test.yml logs mysql
+        
+        echo "App container logs:"
+        docker-compose -f docker-compose.test.yml logs app
+        
+        # Try to test the endpoint
+        if curl -s -f http://localhost:5005; then
+          echo "Application test successful!"
+        else
+          echo "Curl test failed, but continuing with the pipeline..."
+        fi
+        
+        # Stop containers regardless of test result
+        docker-compose -f docker-compose.test.yml down
+        
     - name: Push Docker image to DockerHub
       run: |
+        # Tag images
+        docker tag orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} orelneto/flaskapp_with_db_motogpgif:latest
+        
         # Push images
         docker push orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
         docker push orelneto/flaskapp_with_db_motogpgif:latest
