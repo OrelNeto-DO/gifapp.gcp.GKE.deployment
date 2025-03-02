@@ -17,6 +17,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        persist-credentials: true
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -176,17 +178,29 @@ jobs:
     - name: Update Helm Chart Version
       run: |
         echo "Updating Helm chart version to ${{ env.VERSION }}"
-        # עדכון בפורמט המדויק של הקובץ
+        # עדכון ב-Chart.yaml
         sed -i "s/^version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
         sed -i "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
-        
-        # עדכון התג בקובץ values.yaml
+        # עדכון ב-values.yaml
         sed -i "s/tag: .*/tag: ${{ env.VERSION }}/" ./helm/gif-app/values.yaml
-        
-        # הדפסת התוכן לאחר העדכון לצורך דיבוג
+        # הדפסות לצורך דיבוג
         echo "Contents of Chart.yaml after update:"
         cat ./helm/gif-app/Chart.yaml
-        
+        echo "Contents of values.yaml after update:"
+        cat ./helm/gif-app/values.yaml
+
+    - name: Commit Helm Chart Updates
+      run: |
+        git config --global user.name "OrelNeto-DO"
+        git config --global user.email "orelnetodoazure@gmail.com"
+        git add helm/gif-app/Chart.yaml helm/gif-app/values.yaml
+        if git diff-index --quiet HEAD; then
+          echo "No changes to commit in Helm charts."
+        else
+          git commit -m "Update Helm chart version to ${{ env.VERSION }}"
+          git push origin ${{ github.ref }}
+        fi
+
     - name: Setup Helm
       uses: azure/setup-helm@v3
       with:
@@ -229,8 +243,9 @@ jobs:
         git push
 
     - name: Trigger CD Pipeline
+      if: success()
       uses: peter-evans/repository-dispatch@v2
       with:
-        repository: OrelNeto-DO/helm-charts
-        event-type: trigger-cd-pipeline
-        client-payload: '{"version":"${{ env.VERSION }}"}'
+        token: ${{ secrets.GH_PAT }}
+        event-type: start-cd-pipeline
+        client-payload: '{"version": "${{ env.VERSION }}"}'
