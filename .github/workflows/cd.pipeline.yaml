@@ -1,0 +1,182 @@
+name: CD Pipeline
+
+on:
+  repository_dispatch:
+    types: [start-cd-pipeline]
+  workflow_dispatch:  # מאפשר הפעלה ידנית
+    inputs:
+      version:
+        description: 'Version to deploy'
+        required: false
+        default: 'latest'
+
+jobs:
+  deploy:
+    name: 'Deploy to AKS'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'v3.12.0'
+
+    - name: Get AKS Credentials
+      run: |
+        # Connect to AKS cluster
+        az aks get-credentials --resource-group orel-neto-project --name gifapp-aks --admin
+        
+        # Verify connection
+        kubectl get nodes
+
+    - name: Deploy Monitoring Stack
+      run: |
+        # Add required Helm repositories
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo add grafana https://grafana.github.io/helm-charts
+        helm repo update
+        
+        # Create monitoring namespace
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Update the storage class to Azure managed-premium
+        cat > ./helm/monitoring/azure-values.yaml << EOF
+        grafana:
+          enabled: true
+          adminPassword: admin
+          service:
+            type: LoadBalancer
+          persistence:
+            enabled: true
+            storageClassName: "managed-premium"
+            size: 1Gi
+
+        prometheus:
+          prometheusSpec:
+            retention: 15d
+            serviceMonitorSelectorNilUsesHelmValues: false
+            serviceMonitorSelector: {}
+            resources:
+              requests:
+                memory: 256Mi
+                cpu: 100m
+              limits:
+                memory: 512Mi
+                cpu: 200m
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: managed-premium
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 5Gi
+          service:
+            type: LoadBalancer
+
+        alertmanager:
+          enabled: true
+          service:
+            type: LoadBalancer
+          
+        nodeExporter:
+          enabled: true
+
+        kubeStateMetrics:
+          enabled: true
+        EOF
+        
+        # Install Prometheus stack with the updated values
+        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+          -f ./helm/monitoring/azure-values.yaml \
+          --namespace monitoring
+        
+        # Wait for Prometheus components to be ready
+        echo "Waiting for Prometheus components to be ready..."
+        kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=180s || true
+        kubectl wait --for=condition=ready pod -l app=grafana -n monitoring --timeout=180s || true
+        
+        # Get Grafana credentials and URL
+        GRAFANA_PASSWORD=$(kubectl get secret -n monitoring prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
+        GRAFANA_IP=$(kubectl get svc -n monitoring prometheus-grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        echo "Grafana can be accessed at: http://$GRAFANA_IP"
+        echo "Username: admin"
+        echo "Password: $GRAFANA_PASSWORD"
+
+    - name: Add Helm Repository
+      run: |
+        helm repo add orel-charts https://OrelNeto-DO.github.io/helm-charts
+        helm repo update
+
+    - name: Deploy GifApp
+      run: |
+        # Set version
+        VERSION="${{ github.event.client_payload.version }}"
+        if [ -z "$VERSION" ]; then
+          VERSION="${{ github.event.inputs.version }}"  # If triggered manually
+        fi
+        if [ -z "$VERSION" ]; then
+          VERSION="latest"  # Default if no version provided
+        fi
+        
+        echo "Deploying GifApp version: $VERSION"
+        
+        # Install GifApp with correct values and monitoring enabled
+        helm upgrade --install gifapp orel-charts/gif-app \
+          --namespace gifapp --create-namespace \
+          --set flask.image.tag=$VERSION \
+          --set flask.service.type=LoadBalancer \
+          --set flask.service.port=80 \
+          --set flask.service.targetPort=5000 \
+          --set flask.replicas=2 \
+          --set mysql.image.tag=5.7 \
+          --set mysql.persistence.storageClass=managed-premium \
+          --set mysql.persistence.size=10Gi \
+          --set database.name=${{ secrets.DB_NAME }} \
+          --set database.user=${{ secrets.DB_USER }} \
+          --set database.password=${{ secrets.DB_PASSWORD }} \
+          --set serviceMonitor.enabled=true
+          
+    - name: Verify Deployment
+      run: |
+        # Wait for pods to be ready
+        echo "Waiting for pods to be ready..."
+        kubectl wait --for=condition=ready pods --selector=app=flask-app -n gifapp --timeout=180s || true
+        
+        # Get deployment status
+        kubectl get pods -n gifapp
+        kubectl get services -n gifapp
+        
+        # Get service IP address
+        SERVICE_IP=$(kubectl get service -n gifapp gifapp-flask -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        if [ -n "$SERVICE_IP" ]; then
+          echo "GifApp is accessible at: http://$SERVICE_IP"
+          
+          # Test application
+          echo "Testing application..."
+          curl -s -o /dev/null -w "%{http_code}" http://$SERVICE_IP || true
+        else
+          echo "Waiting for LoadBalancer IP to be assigned..."
+          sleep 30
+          SERVICE_IP=$(kubectl get service -n gifapp gifapp-flask -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          if [ -n "$SERVICE_IP" ]; then
+            echo "GifApp is accessible at: http://$SERVICE_IP"
+          else
+            echo "LoadBalancer IP not assigned yet. Please check manually later."
+          fi
+        fi
+        
+        # Show port-forward command as alternative
+        echo "Alternatively, use port-forward to access the application:"
+        echo "kubectl port-forward -n gifapp svc/gifapp-flask 8080:80"
+        echo "Then access http://localhost:8080"
