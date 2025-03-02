@@ -229,9 +229,8 @@ jobs:
         git push
 
     - name: Trigger CD Pipeline
-      if: success()
       uses: peter-evans/repository-dispatch@v2
       with:
-        token: ${{ secrets.GH_PAT }}
-        event-type: start-cd-pipeline
-        client-payload: '{"version": "${{ env.VERSION }}"}'
+        repository: OrelNeto-DO/helm-charts
+        event-type: trigger-cd-pipeline
+        client-payload: '{"version":"${{ env.VERSION }}"}'
