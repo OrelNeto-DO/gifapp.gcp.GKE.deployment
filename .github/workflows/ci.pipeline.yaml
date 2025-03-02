@@ -1,0 +1,145 @@
+name: CI Pipeline
+
+on:
+  repository_dispatch:
+    types: [start-ci-pipeline]
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:  # enable manual trigger
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Extract Branch Name & Set Build Number
+      shell: bash
+      run: |
+        echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+        echo "BUILD_NUMBER=${{ github.run_number }}" >> $GITHUB_ENV
+        echo "VERSION=1.0.${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
+
+    - name: Build and test
+      env:
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        DB_HOST: mysql
+        DB_PORT: ${{ secrets.DB_PORT }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        PORT: ${{ secrets.PORT }}
+      run: |
+        # Debug: Print environment variables (mask sensitive data)
+        echo "DB_HOST=$DB_HOST"
+        echo "DB_PORT=$DB_PORT"
+        echo "DB_NAME=$DB_NAME"
+        echo "PORT=$PORT"
+        echo "Using build version: ${{ env.VERSION }}"
+        
+        # Build the image with build arguments
+        docker build \
+          --build-arg DB_USER=$DB_USER \
+          --build-arg DB_PASSWORD=$DB_PASSWORD \
+          --build-arg DB_HOST=$DB_HOST \
+          --build-arg DB_PORT=$DB_PORT \
+          --build-arg DB_NAME=$DB_NAME \
+          --build-arg PORT=$PORT \
+          -t orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} ./src
+        
+        # Run the application with docker-compose and environment variables
+        cd src
+        GITHUB_RUN_NUMBER=${{ env.VERSION }} \
+        DB_USER=$DB_USER \
+        DB_PASSWORD=$DB_PASSWORD \
+        DB_HOST=$DB_HOST \
+        DB_PORT=$DB_PORT \
+        DB_NAME=$DB_NAME \
+        PORT=$PORT \
+        docker compose up -d
+        
+        # Wait for the application to start
+        echo "Waiting for application to start..."
+        sleep 30
+        
+        # Test the endpoint with better error handling
+        if ! curl -s -f http://localhost:5005; then
+          echo "Curl test failed. Checking container logs..."
+          docker compose logs
+          exit 1
+        else
+          echo "Application test successful!"
+        fi
+        
+        # Tag images
+        docker tag orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} orelneto/flaskapp_with_db_motogpgif:latest
+        
+        # Push images
+        docker push orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
+        docker push orelneto/flaskapp_with_db_motogpgif:latest
+
+    - name: Update Helm Chart Version
+      run: |
+        echo "Updating Helm chart version to ${{ env.VERSION }}"
+        sed -i "s/version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
+        sed -i "s/appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
+        
+        # Update image tag in values.yaml
+        sed -i "s/tag: .*/tag: ${{ env.VERSION }}/" ./helm/gif-app/values.yaml
+        
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'v3.12.0'
+        
+    - name: Package Helm Chart
+      run: |
+        helm package ./helm/gif-app -d ./helm-packages
+        echo "Helm chart packaged as gif-app-${{ env.VERSION }}.tgz"
+
+    - name: Configure Git for GitHub Pages
+      run: |
+        git config --global user.name "OrelNeto-DO"
+        git config --global user.email "orelnetodoazure@gmail.com"
+        
+    - name: Checkout Helm Charts Repository
+      uses: actions/checkout@v3
+      with:
+        repository: OrelNeto-DO/helm-charts
+        token: ${{ secrets.GH_PAT }}
+        path: helm-repo
+        
+    - name: Update Helm Repository
+      run: |
+        # Copy the packaged chart to the repo directory
+        cp ./helm-packages/gif-app-${{ env.VERSION }}.tgz helm-repo/
+        
+        # Update the index
+        cd helm-repo
+        helm repo index . --url https://OrelNeto-DO.github.io/helm-charts
+        
+        # Commit and push changes
+        git add .
+        git commit -m "Update GifApp Helm chart to version ${{ env.VERSION }}"
+        git push
+
+    - name: Trigger CD Pipeline
+      if: success()
+      uses: peter-evans/repository-dispatch@v2
+      with:
+        token: ${{ secrets.GH_PAT }}
+        event-type: start-cd-pipeline
+        client-payload: '{"version": "${{ env.VERSION }}"}'
