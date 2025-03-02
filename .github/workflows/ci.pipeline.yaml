@@ -67,6 +67,7 @@ jobs:
         DB_NAME: ${{ secrets.DB_NAME }}
         PORT: ${{ secrets.PORT }}
       run: |
+        # יצירת קובץ docker-compose.test.yml
         cat > ./src/docker-compose.test.yml << EOL
         version: '3'
         services:
@@ -96,45 +97,14 @@ jobs:
               - ./init.sql:/docker-entrypoint-initdb.d/init.sql
         EOL
 
-        cat > ./src/init.sql << EOL
-        CREATE DATABASE IF NOT EXISTS mydatabase;
-        USE mydatabase;
-
-        CREATE TABLE IF NOT EXISTS images (
-            id INT AUTO_INCREMENT PRIMARY KEY, 
-            image_url VARCHAR(255) NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS visit_count (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            count INT DEFAULT 0
-        );
-
-        INSERT INTO visit_count (count) VALUES (0);
-
-        INSERT INTO images (image_url) VALUES 
-        ("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExbjkyZm9vZGR6MXhsYWJidm1hOGY5Zm9qZDdkbjRyc2pzenZwZ2hrYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wJ2dyF1tznkqMaq0ju/giphy.webp"),
-        ("https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeDE4OXo4amFjdmw4NGpuYmhieGs0ZHR5NGVpbTN0enI5cnQyNWs1dCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/eLXnKnW3eU9FGX0rdr/giphy.webp"),
-        ("https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExb2pqcWl4MTNzeGQ4ZGxtMzZteTd1ZzM4aTVreWZuODh5NmV3bDg3eiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/TIKlnvZRky3CTFXdHi/giphy.webp"),
-        ("https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExdHRneXZkaGNydDY3end0YWhjdHV6cGF4ZWRiaW90ZWVmMmhqZnI3cSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/tPKmFhIOtrP6rguGSF/giphy.webp"),
-        ("https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXVsNTZ6cHozaHBid2NlMTFnamc1dGl2a2gxZnk3cHZwNjJ6d2gwYyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/tlAWLAuyX9EvgV9BnD/giphy.webp"),
-        ("https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExenZraTJuY29meGVkczVxZjcwZWg3Yno0azM0OHNhM2F1ZXM2cWlvOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/7VxqgDYjpIibFzVIb6/giphy.webp");
-        EOL
-
-        sed -i "s/mydatabase/${DB_NAME}/g" ./src/init.sql
-
-        echo "Contents of init.sql:"
-        cat ./src/init.sql
+        # יצירת init.sql מתוך הסוד המאוחסן (הערך של INIT_SQL צריך להכיל את כל תוכן הקובץ)
+        echo "${{ secrets.INIT_SQL }}" > ./src/init.sql
 
         cd src
         docker compose -f docker-compose.test.yml up -d
         echo "Waiting for MySQL to initialize..."
         sleep 60
         docker ps
-        echo "MySQL container logs:"
-        docker compose -f docker-compose.test.yml logs mysql
-        echo "App container logs:"
-        docker compose -f docker-compose.test.yml logs app
         echo "Testing the application endpoint..."
         if curl -s -f http://localhost:5005; then
           echo "Application test successful!"
@@ -153,13 +123,12 @@ jobs:
     - name: Update Helm Chart Version
       run: |
         echo "Updating Helm chart version to ${{ env.VERSION }}"
-        # שימוש ב-sed עם גיבוי -i.bak להבטיח תאימות
         sed -i.bak "s/^version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
         sed -i.bak "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
         sed -i.bak "s/tag: .*/tag: ${{ env.VERSION }}/" ./helm/gif-app/values.yaml
-        echo "After sed, Chart.yaml contents:"
+        echo "Updated Chart.yaml:"
         cat ./helm/gif-app/Chart.yaml
-        echo "After sed, values.yaml contents:"
+        echo "Updated values.yaml:"
         cat ./helm/gif-app/values.yaml
 
     - name: Commit Helm Chart Updates
@@ -167,15 +136,12 @@ jobs:
         git config --global user.name "OrelNeto-DO"
         git config --global user.email "doazure@gmail.com"
         git add helm/gif-app/Chart.yaml helm/gif-app/values.yaml
-        echo "Git status after adding files:"
-        git status
-        if git diff-index --quiet HEAD; then
-          echo "No changes to commit in Helm charts."
-        else
+        if ! git diff-index --quiet HEAD; then
           git commit -m "Update Helm chart version to ${{ env.VERSION }}"
-          # עדכון remote URL עם PAT כדי לאפשר דחיפה
           git remote set-url origin https://OrelNeto-DO:${{ secrets.GH_PAT }}@github.com/OrelNeto-DO/gifapp.gcp.GKE.deployment.git
           git push origin refs/heads/main
+        else
+          echo "No changes to commit in Helm charts."
         fi
       shell: bash
 
@@ -208,8 +174,6 @@ jobs:
         cp ./helm-packages/gif-app-${{ env.VERSION }}.tgz helm-repo/
         cd helm-repo
         helm repo index . --url https://OrelNeto-DO.github.io/helm-charts
-        echo "Contents of index.yaml after update:"
-        cat index.yaml
         git add .
         git commit -m "Update GifApp Helm chart to version ${{ env.VERSION }}"
         git push
