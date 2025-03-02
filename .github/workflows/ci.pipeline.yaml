@@ -58,18 +58,50 @@ jobs:
           --build-arg PORT=$PORT \
           -t orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} ./src
 
-    - name: Setup and Test Application using repository files
+    - name: Setup and Test Application
       env:
-        DB_USER: ${{ secrets.DB_USER }}
+        DB_USER: "gifuser"
         DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         DB_HOST: mysql
         DB_PORT: ${{ secrets.DB_PORT }}
         DB_NAME: ${{ secrets.DB_NAME }}
         PORT: ${{ secrets.PORT }}
       run: |
-        # הרצת docker compose עם הקובץ הקיים בתיקיית src,
-        # תוך שימוש ב--project-directory . כדי שהנתיבים יתפרשו ביחס לשורש.
-        docker compose -f src/docker-compose.yml --project-directory . up -d
+        # יצירת קובץ docker-compose.test.yml
+        cat > ./src/docker-compose.test.yml << EOL
+        version: '3'
+        services:
+          app:
+            image: orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
+            ports:
+              - "5005:5000"
+            environment:
+              - FLASK_ENV=development
+              - DB_USER=${DB_USER}
+              - DB_PASSWORD=${DB_PASSWORD}
+              - DB_HOST=mysql
+              - DB_PORT=3306
+              - DB_NAME=${DB_NAME}
+            depends_on:
+              - mysql
+          mysql:
+            image: mysql:5.7
+            environment:
+              MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+              MYSQL_DATABASE: ${DB_NAME}
+              MYSQL_USER: ${DB_USER}
+              MYSQL_PASSWORD: ${DB_PASSWORD}
+            ports:
+              - "3306:3306"
+            volumes:
+              - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+        EOL
+
+        # יצירת init.sql מתוך הסוד המאוחסן (הערך של INIT_SQL צריך להכיל את כל תוכן הקובץ)
+        echo "${{ secrets.INIT_SQL }}" > ./src/init.sql
+
+        cd src
+        docker compose -f docker-compose.test.yml up -d
         echo "Waiting for MySQL to initialize..."
         sleep 60
         docker ps
@@ -79,7 +111,7 @@ jobs:
         else
           echo "Curl test failed, but continuing with the pipeline..."
         fi
-        docker compose -f src/docker-compose.yml --project-directory . down
+        docker compose -f docker-compose.test.yml down
 
     - name: Push Docker image to DockerHub
       run: |
