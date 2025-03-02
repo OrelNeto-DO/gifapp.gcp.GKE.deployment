@@ -1,5 +1,8 @@
 name: CI Pipeline
 
+permissions:
+  contents: write
+
 on:
   repository_dispatch:
     types: [start-ci-pipeline]
@@ -192,14 +195,17 @@ jobs:
     - name: Commit Helm Chart Updates
       run: |
         git config --global user.name "OrelNeto-DO"
-        git config --global user.email "orelnetodoazure@gmail.com"
+        git config --global user.email "doazure@gmail.com"
         git add helm/gif-app/Chart.yaml helm/gif-app/values.yaml
         if git diff-index --quiet HEAD; then
           echo "No changes to commit in Helm charts."
         else
           git commit -m "Update Helm chart version to ${{ env.VERSION }}"
-          git push origin ${{ github.ref }}
+          # עדכון remote URL עם PAT כדי לאפשר דחיפה
+          git remote set-url origin https://OrelNeto-DO:${{ secrets.GH_PAT }}@github.com/OrelNeto-DO/gifapp.gcp.GKE.deployment.git
+          git push origin refs/heads/main
         fi
+      shell: bash
 
     - name: Setup Helm
       uses: azure/setup-helm@v3
@@ -215,7 +221,7 @@ jobs:
     - name: Configure Git for GitHub Pages
       run: |
         git config --global user.name "OrelNeto-DO"
-        git config --global user.email "orelnetodoazure@gmail.com"
+        git config --global user.email "doazure@gmail.com"
         
     - name: Checkout Helm Charts Repository
       uses: actions/checkout@v3
@@ -241,7 +247,6 @@ jobs:
         git add .
         git commit -m "Update GifApp Helm chart to version ${{ env.VERSION }}"
         git push
-
     - name: Trigger CD Pipeline
       if: success()
       uses: peter-evans/repository-dispatch@v2
