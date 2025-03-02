@@ -2,10 +2,10 @@ name: Terraform AKS Deployment
 
 on:
   push:
-    branches: [ main, adding-terraform ]
+    branches: [ main ]
     paths-ignore:
       - '**.md'
-  workflow_dispatch:  # מאפשר הפעלה ידנית
+  workflow_dispatch:  # Allows manual trigger
 
 jobs:
   terraform:
@@ -46,23 +46,22 @@ jobs:
     
     - name: Get AKS Credentials
       run: |
-        # התקנת Azure CLI
+        # Install Azure CLI
         curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
         
-        # כניסה ל-Azure
+        # Login to Azure with service principal
         az login --service-principal \
           --username ${{ secrets.AZURE_CLIENT_ID }} \
           --password ${{ secrets.AZURE_CLIENT_SECRET }} \
           --tenant ${{ secrets.AZURE_TENANT_ID }}
         
-        # שימוש בערכים קבועים במקום terraform output
+        # Use fixed values for resource group and cluster name
         RESOURCE_GROUP="orel-neto-project"
         CLUSTER_NAME="gifapp-aks"
         
-        # שמירת הגדרות הקוברנטיס
+        # Save Kubernetes credentials
         mkdir -p ~/.kube
         az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --file kubeconfig.yaml
-        
         echo "Kubeconfig saved to kubeconfig.yaml"
     
     - name: Trigger CI Pipeline
