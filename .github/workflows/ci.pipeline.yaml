@@ -9,7 +9,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - '**/*'
+      - 'src/**'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 jobs:
@@ -17,142 +18,171 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          persist-credentials: true
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        persist-credentials: true
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract Branch Name & Set Build Number
-        shell: bash
-        run: |
-          echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
-          echo "BUILD_NUMBER=${{ github.run_number }}" >> $GITHUB_ENV
-          echo "VERSION=1.0.${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
+    - name: Extract Branch Name & Set Build Number
+      shell: bash
+      run: |
+        echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+        echo "BUILD_NUMBER=${{ github.run_number }}" >> $GITHUB_ENV
+        echo "VERSION=1.0.${GITHUB_RUN_NUMBER}" >> $GITHUB_ENV
 
-      - name: Build Docker Image
-        env:
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_HOST: mysql
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          PORT: ${{ secrets.PORT }}
-        run: |
-          echo "Using build version: ${{ env.VERSION }}"
-          docker build \
-            --build-arg DB_USER=$DB_USER \
-            --build-arg DB_PASSWORD=$DB_PASSWORD \
-            --build-arg DB_HOST=$DB_HOST \
-            --build-arg DB_PORT=$DB_PORT \
-            --build-arg DB_NAME=$DB_NAME \
-            --build-arg PORT=$PORT \
-            -t orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} .
+    - name: Build Docker Image
+      env:
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        DB_HOST: mysql
+        DB_PORT: ${{ secrets.DB_PORT }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        PORT: ${{ secrets.PORT }}
+      run: |
+        echo "Using build version: ${{ env.VERSION }}"
+        docker build \
+          --build-arg DB_USER=$DB_USER \
+          --build-arg DB_PASSWORD=$DB_PASSWORD \
+          --build-arg DB_HOST=$DB_HOST \
+          --build-arg DB_PORT=$DB_PORT \
+          --build-arg DB_NAME=$DB_NAME \
+          --build-arg PORT=$PORT \
+          -t orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} ./src
 
-      - name: Write init.sql from Secrets
-        run: |
-          echo "${{ secrets.INIT_SQL }}" > init.sql
+    - name: Setup and Test Application
+      env:
+        DB_USER: "gifuser"
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        DB_HOST: mysql
+        DB_PORT: ${{ secrets.DB_PORT }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        PORT: ${{ secrets.PORT }}
+      run: |
+        # יצירת קובץ docker-compose.test.yml
+        cat > ./src/docker-compose.test.yml << EOL
+        version: '3'
+        services:
+          app:
+            image: orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
+            ports:
+              - "5005:5000"
+            environment:
+              - FLASK_ENV=development
+              - DB_USER=${DB_USER}
+              - DB_PASSWORD=${DB_PASSWORD}
+              - DB_HOST=mysql
+              - DB_PORT=3306
+              - DB_NAME=${DB_NAME}
+            depends_on:
+              - mysql
+          mysql:
+            image: mysql:5.7
+            environment:
+              MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+              MYSQL_DATABASE: ${DB_NAME}
+              MYSQL_USER: ${DB_USER}
+              MYSQL_PASSWORD: ${DB_PASSWORD}
+            ports:
+              - "3306:3306"
+            volumes:
+              - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+        EOL
 
-      - name: Test Application using docker-compose
-        env:
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_HOST: mysql
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          PORT: ${{ secrets.PORT }}
-        run: |
-          # הרצת docker-compose מהתיקיה השורשית (בהנחה שקובץ docker-compose.yml נמצא בשורש)
-          docker compose -f docker-compose.yml up -d
-          echo "Waiting for MySQL to initialize..."
-          sleep 60
-          docker ps
-          echo "Testing the application endpoint..."
-          if curl -s -f http://localhost:5005; then
-            echo "Application test successful!"
-          else
-            echo "Curl test failed, but continuing with the pipeline..."
-          fi
-          docker compose -f docker-compose.yml down
+        # יצירת init.sql מתוך הסוד המאוחסן (הערך של INIT_SQL צריך להכיל את כל תוכן הקובץ)
+        echo "${{ secrets.INIT_SQL }}" > ./src/init.sql
 
-      - name: Push Docker image to DockerHub
-        run: |
-          docker tag orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} orelneto/flaskapp_with_db_motogpgif:latest
-          docker push orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
-          docker push orelneto/flaskapp_with_db_motogpgif:latest
-          echo "Docker images pushed successfully"
+        cd src
+        docker compose -f docker-compose.test.yml up -d
+        echo "Waiting for MySQL to initialize..."
+        sleep 60
+        docker ps
+        echo "Testing the application endpoint..."
+        if curl -s -f http://localhost:5005; then
+          echo "Application test successful!"
+        else
+          echo "Curl test failed, but continuing with the pipeline..."
+        fi
+        docker compose -f docker-compose.test.yml down
 
-      - name: Update Helm Chart Version
-        run: |
-          echo "Updating Helm chart version to ${{ env.VERSION }}"
-          sed -i.bak "s/^version: .*/version: ${{ env.VERSION }}/" helm/gif-app/Chart.yaml
-          sed -i.bak "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" helm/gif-app/Chart.yaml
-          sed -i.bak "s/tag: .*/tag: ${{ env.VERSION }}/" helm/gif-app/values.yaml
-          echo "Updated Chart.yaml:"
-          cat helm/gif-app/Chart.yaml
-          echo "Updated values.yaml:"
-          cat helm/gif-app/values.yaml
+    - name: Push Docker image to DockerHub
+      run: |
+        docker tag orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} orelneto/flaskapp_with_db_motogpgif:latest
+        docker push orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
+        docker push orelneto/flaskapp_with_db_motogpgif:latest
+        echo "Docker images pushed successfully"
 
-      - name: Commit Helm Chart Updates
-        run: |
-          git config --global user.name "OrelNeto-DO"
-          git config --global user.email "doazure@gmail.com"
-          git add helm/gif-app/Chart.yaml helm/gif-app/values.yaml
-          if ! git diff-index --quiet HEAD; then
-            git commit -m "Update Helm chart version to ${{ env.VERSION }}"
-            git remote set-url origin https://OrelNeto-DO:${{ secrets.GH_PAT }}@github.com/OrelNeto-DO/gifapp.gcp.GKE.deployment.git
-            git push origin refs/heads/main
-          else
-            echo "No changes to commit in Helm charts."
-          fi
-        shell: bash
+    - name: Update Helm Chart Version
+      run: |
+        echo "Updating Helm chart version to ${{ env.VERSION }}"
+        sed -i.bak "s/^version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
+        sed -i.bak "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
+        sed -i.bak "s/tag: .*/tag: ${{ env.VERSION }}/" ./helm/gif-app/values.yaml
+        echo "Updated Chart.yaml:"
+        cat ./helm/gif-app/Chart.yaml
+        echo "Updated values.yaml:"
+        cat ./helm/gif-app/values.yaml
 
-      - name: Setup Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: 'v3.12.0'
+    - name: Commit Helm Chart Updates
+      run: |
+        git config --global user.name "OrelNeto-DO"
+        git config --global user.email "doazure@gmail.com"
+        git add helm/gif-app/Chart.yaml helm/gif-app/values.yaml
+        if ! git diff-index --quiet HEAD; then
+          git commit -m "Update Helm chart version to ${{ env.VERSION }}"
+          git remote set-url origin https://OrelNeto-DO:${{ secrets.GH_PAT }}@github.com/OrelNeto-DO/gifapp.gcp.GKE.deployment.git
+          git push origin refs/heads/main
+        else
+          echo "No changes to commit in Helm charts."
+        fi
+      shell: bash
 
-      - name: Package Helm Chart
-        run: |
-          mkdir -p helm-packages
-          helm package helm/gif-app -d helm-packages
-          echo "Helm chart packaged as gif-app-${{ env.VERSION }}.tgz"
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'v3.12.0'
 
-      - name: Configure Git for GitHub Pages
-        run: |
-          git config --global user.name "OrelNeto-DO"
-          git config --global user.email "doazure@gmail.com"
+    - name: Package Helm Chart
+      run: |
+        mkdir -p ./helm-packages
+        helm package ./helm/gif-app -d ./helm-packages
+        echo "Helm chart packaged as gif-app-${{ env.VERSION }}.tgz"
 
-      - name: Checkout Helm Charts Repository (gh-pages)
-        uses: actions/checkout@v3
-        with:
-          repository: OrelNeto-DO/helm-charts
-          token: ${{ secrets.GH_PAT }}
-          ref: gh-pages
-          path: helm-repo
+    - name: Configure Git for GitHub Pages
+      run: |
+        git config --global user.name "OrelNeto-DO"
+        git config --global user.email "doazure@gmail.com"
 
-      - name: Update Helm Repository
-        run: |
-          cp ./helm-packages/gif-app-${{ env.VERSION }}.tgz helm-repo/
-          cd helm-repo
-          helm repo index . --url https://OrelNeto-DO.github.io/helm-charts
-          git add .
-          git commit -m "Update GifApp Helm chart to version ${{ env.VERSION }}"
-          git push
-        shell: bash
+    - name: Checkout Helm Charts Repository (gh-pages)
+      uses: actions/checkout@v3
+      with:
+        repository: OrelNeto-DO/helm-charts
+        token: ${{ secrets.GH_PAT }}
+        ref: gh-pages
+        path: helm-repo
 
-      - name: Trigger CD Pipeline
-        if: success()
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.GH_PAT }}
-          event-type: start-cd-pipeline
-          client-payload: '{"version": "${{ env.VERSION }}"}'
+    - name: Update Helm Repository
+      run: |
+        cp ./helm-packages/gif-app-${{ env.VERSION }}.tgz helm-repo/
+        cd helm-repo
+        helm repo index . --url https://OrelNeto-DO.github.io/helm-charts
+        git add .
+        git commit -m "Update GifApp Helm chart to version ${{ env.VERSION }}"
+        git push
+      shell: bash
+
+    - name: Trigger CD Pipeline
+      if: success()
+      uses: peter-evans/repository-dispatch@v2
+      with:
+        token: ${{ secrets.GH_PAT }}
+        event-type: start-cd-pipeline
+        client-payload: '{"version": "${{ env.VERSION }}"}'
