@@ -11,12 +11,12 @@ on:
     paths:
       - 'src/**'
       - '.github/workflows/ci.yml'
-  workflow_dispatch:  # מאפשר הפעלה ידנית
+  workflow_dispatch:
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -31,7 +31,7 @@ jobs:
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-        
+
     - name: Extract Branch Name & Set Build Number
       shell: bash
       run: |
@@ -48,14 +48,7 @@ jobs:
         DB_NAME: ${{ secrets.DB_NAME }}
         PORT: ${{ secrets.PORT }}
       run: |
-        # Debug: Print environment variables (mask sensitive data)
-        echo "DB_HOST=$DB_HOST"
-        echo "DB_PORT=$DB_PORT"
-        echo "DB_NAME=$DB_NAME"
-        echo "PORT=$PORT"
         echo "Using build version: ${{ env.VERSION }}"
-        
-        # Build the image with build arguments
         docker build \
           --build-arg DB_USER=$DB_USER \
           --build-arg DB_PASSWORD=$DB_PASSWORD \
@@ -67,14 +60,13 @@ jobs:
 
     - name: Setup and Test Application
       env:
-        DB_USER: "gifuser"  # קבוע לטובת הבדיקות
+        DB_USER: "gifuser"
         DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         DB_HOST: mysql
         DB_PORT: ${{ secrets.DB_PORT }}
         DB_NAME: ${{ secrets.DB_NAME }}
         PORT: ${{ secrets.PORT }}
       run: |
-        # Create a test docker-compose.yml file that matches your existing one
         cat > ./src/docker-compose.test.yml << EOL
         version: '3'
         services:
@@ -103,8 +95,7 @@ jobs:
             volumes:
               - ./init.sql:/docker-entrypoint-initdb.d/init.sql
         EOL
-        
-        # Create init.sql file with your schema
+
         cat > ./src/init.sql << EOL
         CREATE DATABASE IF NOT EXISTS mydatabase;
         USE mydatabase;
@@ -119,10 +110,8 @@ jobs:
             count INT DEFAULT 0
         );
 
-        -- Adding a row to start the count
         INSERT INTO visit_count (count) VALUES (0);
 
-        -- Adding images
         INSERT INTO images (image_url) VALUES 
         ("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExbjkyZm9vZGR6MXhsYWJidm1hOGY5Zm9qZDdkbjRyc2pzenZwZ2hrYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wJ2dyF1tznkqMaq0ju/giphy.webp"),
         ("https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExeDE4OXo4amFjdmw4NGpuYmhieGs0ZHR5NGVpbTN0enI5cnQyNWs1dCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/eLXnKnW3eU9FGX0rdr/giphy.webp"),
@@ -131,49 +120,32 @@ jobs:
         ("https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXVsNTZ6cHozaHBid2NlMTFnamc1dGl2a2gxZnk3cHZwNjJ6d2gwYyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/tlAWLAuyX9EvgV9BnD/giphy.webp"),
         ("https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExenZraTJuY29meGVkczVxZjcwZWg3Yno0azM0OHNhM2F1ZXM2cWlvOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/7VxqgDYjpIibFzVIb6/giphy.webp");
         EOL
-        
-        # Ensure init.sql is using the correct DATABASE name
+
         sed -i "s/mydatabase/${DB_NAME}/g" ./src/init.sql
         
-        # Show init.sql content for debugging
         echo "Contents of init.sql:"
         cat ./src/init.sql
-        
-        # Run the application with docker compose
+
         cd src
         docker compose -f docker-compose.test.yml up -d
-        
-        # Wait for MySQL to initialize
         echo "Waiting for MySQL to initialize..."
         sleep 60
-        
-        # Check if containers are running
         docker ps
-        
-        # Show logs of the containers
         echo "MySQL container logs:"
         docker compose -f docker-compose.test.yml logs mysql
-        
         echo "App container logs:"
         docker compose -f docker-compose.test.yml logs app
-        
-        # Test the endpoint
         echo "Testing the application endpoint..."
         if curl -s -f http://localhost:5005; then
           echo "Application test successful!"
         else
           echo "Curl test failed, but continuing with the pipeline..."
         fi
-        
-        # Stop containers
         docker compose -f docker-compose.test.yml down
 
     - name: Push Docker image to DockerHub
       run: |
-        # Tag images
         docker tag orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }} orelneto/flaskapp_with_db_motogpgif:latest
-        
-        # Push images
         docker push orelneto/flaskapp_with_db_motogpgif:${{ env.VERSION }}
         docker push orelneto/flaskapp_with_db_motogpgif:latest
         echo "Docker images pushed successfully"
@@ -181,15 +153,13 @@ jobs:
     - name: Update Helm Chart Version
       run: |
         echo "Updating Helm chart version to ${{ env.VERSION }}"
-        # עדכון ב-Chart.yaml
-        sed -i "s/^version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
-        sed -i "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
-        # עדכון ב-values.yaml
-        sed -i "s/tag: .*/tag: ${{ env.VERSION }}/" ./helm/gif-app/values.yaml
-        # הדפסות לצורך דיבוג
-        echo "Contents of Chart.yaml after update:"
+        # השתמש ב-sed עם גיבוי -i.bak לשם אמינות
+        sed -i.bak "s/^version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
+        sed -i.bak "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
+        sed -i.bak "s/tag: .*/tag: ${{ env.VERSION }}/" ./helm/gif-app/values.yaml
+        echo "After sed, Chart.yaml contents:"
         cat ./helm/gif-app/Chart.yaml
-        echo "Contents of values.yaml after update:"
+        echo "After sed, values.yaml contents:"
         cat ./helm/gif-app/values.yaml
 
     - name: Commit Helm Chart Updates
@@ -197,6 +167,8 @@ jobs:
         git config --global user.name "OrelNeto-DO"
         git config --global user.email "doazure@gmail.com"
         git add helm/gif-app/Chart.yaml helm/gif-app/values.yaml
+        echo "Git status after adding files:"
+        git status
         if git diff-index --quiet HEAD; then
           echo "No changes to commit in Helm charts."
         else
@@ -211,7 +183,7 @@ jobs:
       uses: azure/setup-helm@v3
       with:
         version: 'v3.12.0'
-        
+
     - name: Package Helm Chart
       run: |
         mkdir -p ./helm-packages
@@ -222,31 +194,25 @@ jobs:
       run: |
         git config --global user.name "OrelNeto-DO"
         git config --global user.email "doazure@gmail.com"
-        
+
     - name: Checkout Helm Charts Repository
       uses: actions/checkout@v3
       with:
         repository: OrelNeto-DO/helm-charts
         token: ${{ secrets.GH_PAT }}
         path: helm-repo
-        
+
     - name: Update Helm Repository
       run: |
-        # Copy the packaged chart to the repo directory
         cp ./helm-packages/gif-app-${{ env.VERSION }}.tgz helm-repo/
-        
-        # Update the index
         cd helm-repo
         helm repo index . --url https://OrelNeto-DO.github.io/helm-charts
-        
-        # Debug: Show contents of the index.yaml
         echo "Contents of index.yaml after update:"
         cat index.yaml
-        
-        # Commit and push changes
         git add .
         git commit -m "Update GifApp Helm chart to version ${{ env.VERSION }}"
         git push
+
     - name: Trigger CD Pipeline
       if: success()
       uses: peter-evans/repository-dispatch@v2
