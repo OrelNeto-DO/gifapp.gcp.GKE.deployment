@@ -9,8 +9,10 @@ spec:
   ports:
     - port: {{ .Values.flask.service.port }}
       targetPort: 5000
-      nodePort: {{ .Values.flask.service.nodePort }}
       protocol: TCP
       name: http
+      {{- if and (eq .Values.flask.service.type "NodePort") .Values.flask.service.nodePort }}
+      nodePort: {{ .Values.flask.service.nodePort }}
+      {{- end }}
   selector:
     app: flask-app

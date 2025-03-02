@@ -5,15 +5,15 @@ flask:
     tag: 1.0.28
     pullPolicy: IfNotPresent
   service:
-    type: NodePort
-    port: 5000
-    nodePort: 31000
-  replicas: 1
+    type: LoadBalancer  # שינוי מ-NodePort ל-LoadBalancer
+    port: 80  # שינוי ל-80 במקום 5000 (סטנדרטי יותר)
+    targetPort: 5000  # התוכנה עדיין מאזינה על 5000
+  replicas: 2  # הגדלנו ל-2 להגברת זמינות
 
 mysql:
   image:
     repository: mysql
-    tag: 1.0.28
+    tag: 5.7  # שימוש בתג קבוע במקום גרסת האפליקציה
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -21,8 +21,8 @@ mysql:
   replicas: 1
   persistence:
     enabled: true
-    storageClass: "hostpath"
-    size: 1Gi
+    storageClass: "managed-premium"  # שינוי ל-Storage Class של Azure
+    size: 10Gi  # הגדלת הנפח ל-10Gi למניעת בעיות ביצועים
   
 # Database Configuration
 database:
@@ -34,3 +34,15 @@ database:
 # ConfigMaps and Init Scripts
 initScript:
   enabled: true
+
+# Ingress Configuration
+ingress:
+  enabled: false  # יופעל בשלב מאוחר יותר
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: gifapp.example.com
+      paths:
+        - path: /
+          pathType: Prefix

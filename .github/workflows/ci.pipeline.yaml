@@ -7,7 +7,7 @@ on:
   repository_dispatch:
     types: [start-ci-pipeline]
   push:
-    branches: [ main ]
+    branches: [ main, ci_and_cd ]
     paths:
       - 'src/**'
       - '.github/workflows/ci.yml'
