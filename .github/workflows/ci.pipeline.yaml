@@ -67,7 +67,8 @@ jobs:
         DB_NAME: ${{ secrets.DB_NAME }}
         PORT: ${{ secrets.PORT }}
       run: |
-        # הרצת docker compose עם קובץ הקיים בתיקיית src, תוך שימוש בפרויקט השורש להבטחת תקינות הנתיבים
+        # הרצת docker compose עם הקובץ הקיים בתיקיית src,
+        # תוך שימוש ב--project-directory . כדי שהנתיבים יתפרשו ביחס לשורש.
         docker compose -f src/docker-compose.yml --project-directory . up -d
         echo "Waiting for MySQL to initialize..."
         sleep 60
