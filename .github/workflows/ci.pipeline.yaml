@@ -4,18 +4,17 @@ permissions:
   contents: write
 
 on:
-  repository_dispatch:
-    types: [start-ci-pipeline]
-  push:
-    branches: [ main ]
-    paths:
-      - 'src/**'
-      - '.github/workflows/ci.yml'
+  workflow_run:
+    workflows: ["Terraform AKS Deployment"]
+    types:
+      - completed
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
     - name: Checkout code
@@ -186,4 +185,3 @@ jobs:
         token: ${{ secrets.GH_PAT }}
         event-type: start-cd-pipeline
         client-payload: '{"version": "${{ env.VERSION }}"}'
-        
