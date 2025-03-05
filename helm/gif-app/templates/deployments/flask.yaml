@@ -26,9 +26,10 @@ spec:
           ports:
             - containerPort: {{ .Values.flask.service.targetPort }}
               name: http
-            # Added metrics port for Prometheus
+            {{- if .Values.serviceMonitor.enabled }}
             - containerPort: 9110
               name: metrics
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "gif-app.fullname" . }}-flask-config

@@ -2,7 +2,7 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.56
+    tag: 1.0.57
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP   # שימוש ב-ClusterIP עבור Ingress
@@ -41,10 +41,10 @@ ingress:
   enabled: true
   className: "nginx"
   annotations:
-    # Removed the duplicate class annotation
     nginx.ingress.kubernetes.io/rewrite-target: /
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
   hosts:
     - host: gifapp.nip.io  # Will be dynamically updated in CD pipeline
       paths:
