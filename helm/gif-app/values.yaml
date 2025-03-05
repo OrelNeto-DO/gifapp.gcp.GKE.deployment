@@ -2,12 +2,13 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.48
+    tag: 1.0.47      # גרסה זו תתעדכן דרך ה־CI
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP   # שימוש ב-ClusterIP עבור Ingress
     port: 80          # הפורט החיצוני לשירות
     targetPort: 5000  # הפורט שהאפליקציה מאזינה עליו
+    extraPorts: []    # ביטול פורטים נוספים מברירת מחדל
   replicas: 2
 
 mysql:
