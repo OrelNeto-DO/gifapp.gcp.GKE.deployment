@@ -2,7 +2,7 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.49      # גרסה זו תתעדכן דרך ה־CI
+    tag: 1.0.50
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP   # שימוש ב-ClusterIP עבור Ingress
