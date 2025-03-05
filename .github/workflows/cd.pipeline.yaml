@@ -122,11 +122,42 @@ jobs:
         kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
         # התקנה/עדכון של Ingress Controller
         helm upgrade --install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx
+        
+        # המתנה להכנת ה-Ingress Controller
+        echo "Waiting for ingress controller to be ready..."
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller -n ingress-nginx --timeout=180s || true
+        
+        # קבלת ה-IP החיצוני של ה-Ingress Controller לשימוש מאוחר יותר
+        INGRESS_CONTROLLER_IP=$(kubectl get svc -n ingress-nginx nginx-ingress-ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "Ingress Controller IP: $INGRESS_CONTROLLER_IP"
+        
+        # עדכון ה-Ingress Host עם ה-IP האמיתי
+        if [ -n "$INGRESS_CONTROLLER_IP" ]; then
+          # עדכון הקובץ values.yaml עם ה-IP החדש
+          sed -i "s/128.251.248.102.nip.io/$INGRESS_CONTROLLER_IP.nip.io/g" helm/gif-app/values.yaml
+          echo "Updated ingress host to: $INGRESS_CONTROLLER_IP.nip.io"
+        fi
+
+    - name: Create MySQL Secrets
+      run: |
+        # יצירת ה-namespace אם לא קיים
+        kubectl create namespace gifapp --dry-run=client -o yaml | kubectl apply -f -
+        
+        # יצירת ה-Secret מתוך GitHub Secrets
+        kubectl create secret generic gifapp-mysql-secrets \
+          --namespace gifapp \
+          --from-literal=DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+          --from-literal=DB_USER='${{ secrets.DB_USER }}' \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # וידוא שה-Secret נוצר בהצלחה
+        echo "Checking if MySQL secrets were created successfully:"
+        kubectl get secret gifapp-mysql-secrets -n gifapp -o jsonpath='{.metadata.name}' || echo "Failed to create MySQL secrets"
 
     - name: Deploy GifApp
       run: |
         echo "Deploying GifApp using GitOps configuration from values file"
-        # שימוש בקובץ הערכים לניהול מלא של ההגדרות (כולל Ingress)
+        # התקנת ה-Helm Chart עם הערכים מהקובץ
         helm upgrade --install gifapp orel-charts/gif-app \
           --namespace gifapp --create-namespace \
           -f helm/gif-app/values.yaml
@@ -139,15 +170,46 @@ jobs:
         kubectl get services -n gifapp
         kubectl get ingress -n gifapp
 
-        INGRESS_IP=$(kubectl get ingress -n gifapp gifapp-flask -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-        if [ -n "$INGRESS_IP" ]; then
-          echo "GifApp is accessible at: http://$INGRESS_IP"
-          echo "Testing application..."
-          curl -s -o /dev/null -w "%{http_code}" http://$INGRESS_IP || true
+        # קבלת שם ה-Ingress הנכון
+        INGRESS_NAME=$(kubectl get ingress -n gifapp -o jsonpath='{.items[0].metadata.name}')
+        echo "Found ingress with name: $INGRESS_NAME"
+        
+        if [ -n "$INGRESS_NAME" ]; then
+          # קבלת ה-Host של ה-Ingress
+          INGRESS_HOST=$(kubectl get ingress -n gifapp $INGRESS_NAME -o jsonpath='{.spec.rules[0].host}' 2>/dev/null)
+          if [ -n "$INGRESS_HOST" ]; then
+            echo "GifApp is accessible at: http://$INGRESS_HOST"
+            echo "Testing application..."
+            curl -s -m 10 -o /dev/null -w "%{http_code}" "http://$INGRESS_HOST" || echo "Failed to connect, but continuing"
+          else
+            echo "Ingress host not assigned yet. Please check manually later."
+          fi
         else
-          echo "Ingress IP not assigned yet. Please check manually later."
+          echo "No ingress resources found in the gifapp namespace."
         fi
 
+        # אלטרנטיבה באמצעות Port-Forward
         echo "Alternatively, use port-forward to access the application:"
-        echo "kubectl port-forward -n gifapp svc/gifapp-flask 8080:80"
+        echo "kubectl port-forward -n gifapp svc/gif-app-gifapp-flask 8080:80"
         echo "Then access http://localhost:8080"
+
+    - name: Debug Ingress (If needed)
+      if: always()
+      run: |
+        echo "Checking ingress controller status:"
+        kubectl get pods -n ingress-nginx
+        kubectl get svc -n ingress-nginx
+        echo "Checking ingress resources:"
+        kubectl get ingress -A
+        echo "Checking Ingress Events:"
+        kubectl get events -n gifapp --sort-by='.lastTimestamp' | grep Ingress || echo "No Ingress events found"
+        echo "Checking Pod Events:"
+        kubectl get events -n gifapp --sort-by='.lastTimestamp' | grep Pod || echo "No Pod events found"
+        
+        # בדיקת נתיבי רשת
+        echo "Testing network paths:"
+        FLASK_SVC=$(kubectl get svc -n gifapp -l app=flask-app -o jsonpath='{.items[0].metadata.name}')
+        if [ -n "$FLASK_SVC" ]; then
+          echo "Testing connection to Flask service ($FLASK_SVC):"
+          kubectl run -n gifapp curl-test --image=curlimages/curl --rm -i --restart=Never -- curl -s http://$FLASK_SVC || echo "Failed to test connection to Flask service"
+        fi

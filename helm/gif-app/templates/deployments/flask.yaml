@@ -1,9 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-flask
+  name: {{ include "gif-app.fullname" . }}-flask
   labels:
     app: flask-app
+    {{- include "gif-app.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.flask.replicas }}
   selector:
@@ -15,7 +16,7 @@ spec:
         app: flask-app
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "5000"
+        prometheus.io/port: "9110"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,10 +24,25 @@ spec:
           image: "{{ .Values.flask.image.repository }}:{{ .Values.flask.image.tag }}"
           imagePullPolicy: {{ .Values.flask.image.pullPolicy }}
           ports:
-            - containerPort: {{ .Values.flask.service.port }}
+            - containerPort: {{ .Values.flask.service.targetPort }}
               name: http
+            # Added metrics port for Prometheus
+            - containerPort: 9110
+              name: metrics
           envFrom:
             - configMapRef:
-                name: {{ .Release.Name }}-flask-config
+                name: {{ include "gif-app.fullname" . }}-flask-config
             - secretRef:
-                name: {{ .Release.Name }}-mysql-secrets
+                name: {{ include "gif-app.fullname" . }}-mysql-secrets
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20

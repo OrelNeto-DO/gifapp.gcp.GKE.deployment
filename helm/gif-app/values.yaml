@@ -29,7 +29,7 @@ mysql:
 database:
   name: mydatabase
   user: root
-  password: rootpassword
+  password: rootpassword  # This will be overridden by secrets
   rootHost: "%"
 
 # ConfigMaps and Init Scripts
@@ -41,17 +41,15 @@ ingress:
   enabled: true
   className: "nginx"
   annotations:
-    kubernetes.io/ingress.class: nginx
+    # Removed the duplicate class annotation
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
   hosts:
-    - host: 128.251.248.102.nip.io  # שימוש ב-nip.io כדי למפות את ה-IP לחיבור DNS זמני
+    - host: gifapp.nip.io  # Will be dynamically updated in CD pipeline
       paths:
         - path: /
           pathType: Prefix
-# Optional: הגדרות TLS במידת הצורך
-# tls:
-#   - hosts:
-#       - 128.251.248.102.nip.io
-#     secretName: gifapp-tls
 
 # ServiceMonitor Configuration for Prometheus
 serviceMonitor:
