@@ -2,12 +2,12 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.46
+    tag: 1.0.43      # עדכן כאן את הגרסה הרצויה
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP   # שימוש ב-ClusterIP עבור Ingress
-    port: 80
-    targetPort: 5000
+    port: 80          # הפורט החיצוני לשירות
+    targetPort: 5000  # הפורט שהאפליקציה מאזינה עליו
   replicas: 2
 
 mysql:
@@ -42,12 +42,19 @@ ingress:
   annotations:
     kubernetes.io/ingress.class: nginx
   hosts:
-    - host: gifapp.example.com  # אם אין DNS רשמי, תוכל להשתמש בשירות כמו nip.io: לדוגמה, 1.2.3.4.nip.io
+    - host: gifapp.example.com  # במידה ואין DNS רשמי ניתן להשתמש בשירות כמו nip.io, למשל: 1.2.3.4.nip.io
       paths:
         - path: /
           pathType: Prefix
-# Optional: הגדרות TLS אם נדרש:
+# Optional: הגדרות TLS במידת הצורך
 # tls:
 #   - hosts:
 #       - gifapp.example.com
 #     secretName: gifapp-tls
+
+# ServiceMonitor Configuration for Prometheus
+serviceMonitor:
+  enabled: true         # הפעלת ServiceMonitor לשאיבת /metrics מהאפליקציה
+  interval: 30s         # מרווח בין סקרות
+  scrapeTimeout: 10s    # זמן קצוב לסקר
+  additionalLabels: {}  # ניתן להוסיף תוויות נוספות אם נדרש
