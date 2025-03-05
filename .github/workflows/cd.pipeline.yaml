@@ -134,40 +134,55 @@ jobs:
         # עדכון ה-Ingress Host עם ה-IP האמיתי
         if [ -n "$INGRESS_CONTROLLER_IP" ]; then
           # עדכון הקובץ values.yaml עם ה-IP החדש
-          sed -i "s/128.251.248.102.nip.io/$INGRESS_CONTROLLER_IP.nip.io/g" helm/gif-app/values.yaml
+          sed -i "s/gifapp.nip.io/$INGRESS_CONTROLLER_IP.nip.io/g" helm/gif-app/values.yaml
           echo "Updated ingress host to: $INGRESS_CONTROLLER_IP.nip.io"
         fi
-
-    - name: Create MySQL Secrets
-      run: |
-        # יצירת ה-namespace אם לא קיים
-        kubectl create namespace gifapp --dry-run=client -o yaml | kubectl apply -f -
-        
-        # יצירת ה-Secret מתוך GitHub Secrets
-        kubectl create secret generic gifapp-mysql-secrets \
-          --namespace gifapp \
-          --from-literal=DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
-          --from-literal=DB_USER='${{ secrets.DB_USER }}' \
-          --dry-run=client -o yaml | kubectl apply -f -
-        
-        # וידוא שה-Secret נוצר בהצלחה
-        echo "Checking if MySQL secrets were created successfully:"
-        kubectl get secret gifapp-mysql-secrets -n gifapp -o jsonpath='{.metadata.name}' || echo "Failed to create MySQL secrets"
 
     - name: Deploy GifApp
       run: |
         echo "Deploying GifApp using GitOps configuration from values file"
-        # התקנת ה-Helm Chart עם הערכים מהקובץ
+        # שימוש בקובץ הערכים לניהול מלא של ההגדרות (כולל Ingress)
         helm upgrade --install gifapp orel-charts/gif-app \
           --namespace gifapp --create-namespace \
           -f helm/gif-app/values.yaml
+        
+        # ****** התיקון המרכזי ******
+        # יצירת המשאבים עם השם הנכון שה-Pod מצפה לו
+        echo "Creating necessary ConfigMap and Secret with the correct names..."
+        
+        # יצירת ConfigMap עם השם הנכון שה-Pod מחפש
+        kubectl get configmap gifapp-flask-config -n gifapp -o yaml | \
+          sed 's/name: gifapp-flask-config/name: gif-app-gifapp-flask-config/' | \
+          kubectl apply -f -
+        
+        # יצירת Secret עם השם הנכון שה-Pod מחפש
+        kubectl get secret gifapp-mysql-secrets -n gifapp -o yaml | \
+          sed 's/name: gifapp-mysql-secrets/name: gif-app-gifapp-mysql-secrets/' | \
+          kubectl apply -f -
+        
+        # מחיקת הפודים הקיימים כדי שייווצרו מחדש עם הקונפיגורציה הנכונה
+        kubectl delete pods -n gifapp -l app=flask-app
 
     - name: Verify Deployment
       run: |
         echo "Waiting for pods to be ready..."
-        kubectl wait --for=condition=ready pods --selector=app=flask-app -n gifapp --timeout=180s || true
+        # המתנה ארוכה יותר כדי לאפשר לפודים להתחיל מחדש
+        kubectl wait --for=condition=ready pods --selector=app=flask-app -n gifapp --timeout=300s || true
+        
+        # הצגת סטטוס המשאבים
+        echo "Checking pods status:"
         kubectl get pods -n gifapp
+        
+        echo "Checking ConfigMaps:"
+        kubectl get configmaps -n gifapp
+        
+        echo "Checking Secrets:"
+        kubectl get secrets -n gifapp
+        
+        echo "Checking services:"
         kubectl get services -n gifapp
+        
+        echo "Checking ingress:"
         kubectl get ingress -n gifapp
 
         # קבלת שם ה-Ingress הנכון
@@ -199,10 +214,13 @@ jobs:
         echo "Checking ingress controller status:"
         kubectl get pods -n ingress-nginx
         kubectl get svc -n ingress-nginx
+        
         echo "Checking ingress resources:"
         kubectl get ingress -A
+        
         echo "Checking Ingress Events:"
         kubectl get events -n gifapp --sort-by='.lastTimestamp' | grep Ingress || echo "No Ingress events found"
+        
         echo "Checking Pod Events:"
         kubectl get events -n gifapp --sort-by='.lastTimestamp' | grep Pod || echo "No Pod events found"
         
@@ -213,3 +231,7 @@ jobs:
           echo "Testing connection to Flask service ($FLASK_SVC):"
           kubectl run -n gifapp curl-test --image=curlimages/curl --rm -i --restart=Never -- curl -s http://$FLASK_SVC || echo "Failed to test connection to Flask service"
         fi
+        
+        # בדיקת התצורה של הפוד לאיתור שגיאות נוספות
+        echo "Describing pods for additional configuration errors:"
+        kubectl describe pods -n gifapp -l app=flask-app
