@@ -2,13 +2,13 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.45
+    tag: 1.0.43      # עדכן כאן את הגרסה הרצויה
     pullPolicy: IfNotPresent
   service:
-    type: ClusterIP           # שינוי: מ-LoadBalancer ל-ClusterIP (גישה דרך Ingress)
-    port: 80                  # הפורט החיצוני שיוגדר ב-Ingress
-    targetPort: 5000          # הפורט שהאפליקציה מאזינה עליו
-  replicas: 2               # הגדלה ל-2 להגברת זמינות
+    type: ClusterIP   # שימוש ב-ClusterIP עבור Ingress
+    port: 80
+    targetPort: 5000
+  replicas: 2
 
 mysql:
   image:
@@ -21,9 +21,9 @@ mysql:
   replicas: 1
   persistence:
     enabled: true
-    storageClass: "managed-premium"   # שימוש ב-Storage Class של Azure
-    size: 10Gi                        # הגדלת נפח לאבטחת ביצועים
-
+    storageClass: "managed-premium"
+    size: 10Gi
+  
 # Database Configuration
 database:
   name: mydatabase
@@ -37,16 +37,16 @@ initScript:
 
 # Ingress Configuration
 ingress:
-  enabled: true                 # הפעלת Ingress
+  enabled: true
   className: "nginx"
   annotations:
     kubernetes.io/ingress.class: nginx
   hosts:
-    - host: gifapp.example.com  # עדכן לדומיין המתאים (לדוגמה: gifapp.azurefd.net)
+    - host: gifapp.example.com  # אם אין DNS רשמי, תוכל להשתמש בשירות כמו nip.io: לדוגמה, 1.2.3.4.nip.io
       paths:
         - path: /
           pathType: Prefix
-# Optional: אם תרצה HTTPS, ניתן להוסיף:
+# Optional: הגדרות TLS אם נדרש:
 # tls:
 #   - hosts:
 #       - gifapp.example.com

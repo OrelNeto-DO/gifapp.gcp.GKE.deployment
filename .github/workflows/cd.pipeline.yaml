@@ -3,7 +3,7 @@ name: CD Pipeline
 on:
   repository_dispatch:
     types: [start-cd-pipeline]
-  workflow_dispatch:  # מאפשר הפעלה ידנית
+  workflow_dispatch: # מאפשר הפעלה ידנית
     inputs:
       version:
         description: 'Version to deploy'
@@ -20,6 +20,20 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
+    # שלב אינטגרציה עם Vault – חילוץ סודות (DB_NAME, DB_USER, DB_PASSWORD)
+    - name: Vault Login and Fetch Secrets
+      id: vault
+      uses: hashicorp/vault-action@v2
+      with:
+        url: ${{ secrets.VAULT_URL }}           # כתובת ה-Vault שלך
+        method: approle
+        roleId: ${{ secrets.VAULT_ROLE_ID }}
+        secretId: ${{ secrets.VAULT_SECRET_ID }}
+        secrets: |
+          secret/data/gifapp:DB_NAME,DB_USER,DB_PASSWORD
+      # הערה: פעולה זו תשלוף את הסודות ותאפשר שימוש בהם כמשתני סביבה
+      # ניתן להתאים את השדות בהתאם למבנה הסוד ב-Vault
+
     - name: Azure Login
       uses: azure/login@v1
       with:
@@ -32,21 +46,21 @@ jobs:
 
     - name: Get AKS Credentials
       run: |
-        # Connect to AKS cluster
+        # התחברות לקלאסטר AKS
         az aks get-credentials --resource-group orel-neto-project --name gifapp-aks --admin
         kubectl get nodes
 
     - name: Deploy Monitoring Stack
       run: |
-        # Add required Helm repositories
+        # הוספת מאגרי Helm הדרושים
         helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
         helm repo add grafana https://grafana.github.io/helm-charts
         helm repo update
-        
-        # Create monitoring namespace
+
+        # יצירת namespace למוניטורינג
         kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-        
-        # Update the storage class to Azure managed-premium
+
+        # יצירת קובץ ערכים לעדכון הגדרות המוניטורינג עבור Azure
         cat > ./helm/monitoring/azure-values.yaml << EOF
         grafana:
           enabled: true
@@ -92,18 +106,18 @@ jobs:
         kubeStateMetrics:
           enabled: true
         EOF
-        
-        # Install Prometheus stack with the updated values
+
+        # התקנת סטאק Prometheus באמצעות קובץ הערכים המעודכן
         helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
           -f ./helm/monitoring/azure-values.yaml \
           --namespace monitoring
-        
-        # Wait for Prometheus components to be ready
+
+        # המתנה עד שהפודים יהיו מוכנים
         echo "Waiting for Prometheus components to be ready..."
         kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=180s || true
         kubectl wait --for=condition=ready pod -l app=grafana -n monitoring --timeout=180s || true
-        
-        # Get Grafana credentials and URL
+
+        # חילוץ פרטי גישה ל-Grafana
         GRAFANA_PASSWORD=$(kubectl get secret -n monitoring prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
         GRAFANA_IP=$(kubectl get svc -n monitoring prometheus-grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
         echo "Grafana can be accessed at: http://$GRAFANA_IP"
@@ -117,57 +131,31 @@ jobs:
 
     - name: Install Ingress Controller
       run: |
-        # Add Ingress-NGINX repository and update
+        # הוספת מאגר Ingress-NGINX ועדכון
         helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
         helm repo update
-        # Create namespace for Ingress Controller
+        # יצירת namespace ל-Ingress Controller
         kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
-        # Install/Upgrade Ingress Controller
+        # התקנה/עדכון של Ingress Controller
         helm upgrade --install nginx-ingress ingress-nginx/ingress-nginx --namespace ingress-nginx
 
     - name: Deploy GifApp
       run: |
-        # הגדרת הגרסה
-        VERSION="${{ github.event.client_payload.version }}"
-        if [ -z "$VERSION" ]; then
-          VERSION="${{ github.event.inputs.version }}"  # במקרה של טריגר ידני
-        fi
-        if [ -z "$VERSION" ]; then
-          VERSION="latest"  # ברירת מחדל
-        fi
-        
-        echo "Deploying GifApp version: $VERSION"
-        
-        # התקנת GifApp עם ערכים מעודכנים - השירות מוגדר כ-ClusterIP ומפעילים Ingress
+        echo "Deploying GifApp using GitOps configuration from values file"
+        # שימוש בקובץ הערכים שבמאגר לניהול מלא של ההגדרות
         helm upgrade --install gifapp orel-charts/gif-app \
           --namespace gifapp --create-namespace \
-          --set flask.image.tag=$VERSION \
-          --set flask.service.type=ClusterIP \
-          --set flask.service.port=80 \
-          --set flask.service.targetPort=5000 \
-          --set flask.replicas=2 \
-          --set mysql.image.tag=5.7 \
-          --set mysql.persistence.storageClass=managed-premium \
-          --set mysql.persistence.size=10Gi \
-          --set database.name=${{ secrets.DB_NAME }} \
-          --set database.user=${{ secrets.DB_USER }} \
-          --set database.password=${{ secrets.DB_PASSWORD }} \
-          --set serviceMonitor.enabled=true \
-          --set ingress.enabled=true \
-          --set ingress.hosts[0].host=gifapp.example.com
+          -f helm/gif-app/values.yaml
 
     - name: Verify Deployment
       run: |
-        # המתן עד שהפודים יהיו מוכנים
         echo "Waiting for pods to be ready..."
         kubectl wait --for=condition=ready pods --selector=app=flask-app -n gifapp --timeout=180s || true
-        
-        # בדיקת סטטוס הפריסה
         kubectl get pods -n gifapp
         kubectl get services -n gifapp
         kubectl get ingress -n gifapp
-        
-        # ניסיון לגשת לכתובת Ingress
+
+        # ניסיון לשליפת IP מה-Ingress
         INGRESS_IP=$(kubectl get ingress -n gifapp gifapp-flask -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
         if [ -n "$INGRESS_IP" ]; then
           echo "GifApp is accessible at: http://$INGRESS_IP"
@@ -176,8 +164,7 @@ jobs:
         else
           echo "Ingress IP not assigned yet. Please check manually later."
         fi
-        
-        # הצגת פקודת port-forward כחלופה
+
         echo "Alternatively, use port-forward to access the application:"
         echo "kubectl port-forward -n gifapp svc/gifapp-flask 8080:80"
         echo "Then access http://localhost:8080"
