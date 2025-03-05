@@ -20,20 +20,6 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # שלב אינטגרציה עם Vault – חילוץ סודות (DB_NAME, DB_USER, DB_PASSWORD)
-    - name: Vault Login and Fetch Secrets
-      id: vault
-      uses: hashicorp/vault-action@v2
-      with:
-        url: ${{ secrets.VAULT_URL }}           # כתובת ה-Vault שלך
-        method: approle
-        roleId: ${{ secrets.VAULT_ROLE_ID }}
-        secretId: ${{ secrets.VAULT_SECRET_ID }}
-        secrets: |
-          secret/data/gifapp:DB_NAME,DB_USER,DB_PASSWORD
-      # הערה: פעולה זו תשלוף את הסודות ותאפשר שימוש בהם כמשתני סביבה
-      # ניתן להתאים את השדות בהתאם למבנה הסוד ב-Vault
-
     - name: Azure Login
       uses: azure/login@v1
       with:
@@ -112,12 +98,10 @@ jobs:
           -f ./helm/monitoring/azure-values.yaml \
           --namespace monitoring
 
-        # המתנה עד שהפודים יהיו מוכנים
         echo "Waiting for Prometheus components to be ready..."
         kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=180s || true
         kubectl wait --for=condition=ready pod -l app=grafana -n monitoring --timeout=180s || true
 
-        # חילוץ פרטי גישה ל-Grafana
         GRAFANA_PASSWORD=$(kubectl get secret -n monitoring prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
         GRAFANA_IP=$(kubectl get svc -n monitoring prometheus-grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
         echo "Grafana can be accessed at: http://$GRAFANA_IP"
@@ -142,7 +126,7 @@ jobs:
     - name: Deploy GifApp
       run: |
         echo "Deploying GifApp using GitOps configuration from values file"
-        # שימוש בקובץ הערכים שבמאגר לניהול מלא של ההגדרות
+        # שימוש בקובץ הערכים לניהול מלא של ההגדרות (כולל Ingress)
         helm upgrade --install gifapp orel-charts/gif-app \
           --namespace gifapp --create-namespace \
           -f helm/gif-app/values.yaml
@@ -155,7 +139,6 @@ jobs:
         kubectl get services -n gifapp
         kubectl get ingress -n gifapp
 
-        # ניסיון לשליפת IP מה-Ingress
         INGRESS_IP=$(kubectl get ingress -n gifapp gifapp-flask -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
         if [ -n "$INGRESS_IP" ]; then
           echo "GifApp is accessible at: http://$INGRESS_IP"
