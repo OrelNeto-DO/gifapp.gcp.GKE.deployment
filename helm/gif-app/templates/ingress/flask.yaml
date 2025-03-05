@@ -2,7 +2,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "gifapp.fullname" . }}-flask
+  name: {{ include "gif-app.fullname" . }}-flask
   annotations:
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
@@ -21,7 +21,7 @@ spec:
         pathType: {{ .pathType }}
         backend:
           service:
-            name: {{ include "gifapp.fullname" . }}-flask
+            name: {{ include "gif-app.fullname" $ }}-flask
             port:
               number: {{ $.Values.flask.service.port }}
       {{- end }}
