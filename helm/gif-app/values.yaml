@@ -2,7 +2,7 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.64
+    tag: 1.0.65
     pullPolicy: IfNotPresent
   service:
     type: LoadBalancer  # שינוי מ-NodePort ל-LoadBalancer
