@@ -1,10 +1,10 @@
 # קבלת מידע על קלאסטר ה-AKS הקיים
 data "azurerm_kubernetes_cluster" "existing" {
-  name                = var.kubernetes_cluster_name
-  resource_group_name = var.resource_group_name
+  name                = "gifapp-aks"  # שם הקלאסטר שלך
+  resource_group_name = "orel-neto-project"  # שם קבוצת המשאבים
 }
 
-# קבלת שם ה-NSG
+# קבלת NSGs בקבוצת המשאבים של ה-Nodes
 data "azurerm_resources" "node_nsg" {
   resource_group_name = data.azurerm_kubernetes_cluster.existing.node_resource_group
   type                = "Microsoft.Network/networkSecurityGroups"
