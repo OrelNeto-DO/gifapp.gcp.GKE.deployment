@@ -34,7 +34,7 @@ jobs:
         kubectl get nodes
 
     - name: Install Vault
-      if: ${{ (github.event.inputs.update_only || github.event.client_payload.update_only || 'false') != 'true' }}
+      if: ${{ github.event.inputs.update_only != 'true' }}
       run: |
         # בדיקה אם Vault כבר מותקן
         if ! kubectl get namespace vault &>/dev/null; then
@@ -182,12 +182,15 @@ jobs:
         echo "Verifying Vault configuration:"
         echo "----------------------------"
         
+        # תצוגת מדיניות
         echo "Policies:"
         kubectl exec -n vault $VAULT_POD -- vault policy list
         
+        # תצוגת תפקידים
         echo "Kubernetes Auth Roles:"
         kubectl exec -n vault $VAULT_POD -- vault list auth/kubernetes/role
         
+        # בדיקת נתיבי סודות
         echo "Secret Paths:"
         kubectl exec -n vault $VAULT_POD -- vault secrets list
         
@@ -196,3 +199,11 @@ jobs:
         
         echo "----------------------------"
         echo "Vault setup and verification completed successfully!"
+      
+    # Trigger CI Pipeline
+    - name: Trigger CI Pipeline
+      if: success()
+      uses: peter-evans/repository-dispatch@v2
+      with:
+        token: ${{ secrets.GH_PAT }}
+        event-type: start-ci-pipeline

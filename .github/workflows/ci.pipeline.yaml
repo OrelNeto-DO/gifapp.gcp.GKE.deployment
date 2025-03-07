@@ -4,16 +4,13 @@ permissions:
   contents: write
 
 on:
-  workflow_run:
-    workflows: ["Vault Setup and Secret Management"]
-    types:
-      - completed
+  repository_dispatch:
+    types: [start-ci-pipeline]
   workflow_dispatch:
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
     - name: Checkout code
@@ -65,6 +62,7 @@ jobs:
         DB_NAME: ${{ secrets.DB_NAME }}
         PORT: ${{ secrets.PORT }}
       run: |
+        # יצירת קובץ docker-compose.test.yml
         cat > ./src/docker-compose.test.yml << EOL
         version: '3'
         services:
@@ -94,6 +92,7 @@ jobs:
               - ./init.sql:/docker-entrypoint-initdb.d/init.sql
         EOL
 
+        # יצירת init.sql מתוך הסוד המאוחסן (הערך של INIT_SQL צריך להכיל את כל תוכן הקובץ)
         echo "${{ secrets.INIT_SQL }}" > ./src/init.sql
 
         cd src
@@ -121,7 +120,10 @@ jobs:
         echo "Updating Helm chart version to ${{ env.VERSION }}"
         sed -i.bak "s/^version: .*/version: ${{ env.VERSION }}/" ./helm/gif-app/Chart.yaml
         sed -i.bak "s/^appVersion: .*/appVersion: \"${{ env.VERSION }}\"/" ./helm/gif-app/Chart.yaml
+        
+        # עדכון רק של התג של Flask באמצעות פתרון עם sed פשוט יותר
         sed -i -e '/flask:/,/mysql:/ s/tag: .*/tag: ${{ env.VERSION }}/' ./helm/gif-app/values.yaml
+        
         echo "Updated Chart.yaml:"
         cat ./helm/gif-app/Chart.yaml
         echo "Updated values.yaml:"
