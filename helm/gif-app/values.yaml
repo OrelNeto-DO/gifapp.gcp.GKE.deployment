@@ -49,7 +49,7 @@ ingress:
 
 # Vault Integration
 vault:
-  enabled: false  # הפוך ל-true כאשר מוכן להשתמש ב-Vault
+  enabled: true  # הפוך ל-true כאשר מוכן להשתמש ב-Vault
   address: "http://vault.vault.svc.cluster.local:8200"
   serviceAccount: "flask-app-sa"
   database:
