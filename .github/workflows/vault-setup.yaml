@@ -64,10 +64,9 @@ jobs:
             --namespace kube-system \
             --set syncSecret.enabled=true
           
-          # התקנת Vault Provider
+          # התקנת Vault Provider - תיקון כאן
           echo "Installing Vault CSI Provider..."
-          helm install vault-csi-provider hashicorp/vault-csi-provider \
-            --namespace kube-system
+          kubectl apply -f https://raw.githubusercontent.com/hashicorp/vault-csi-provider/main/deployment/vault-csi-provider.yaml
         else
           echo "Vault is already installed."
         fi
@@ -200,7 +199,7 @@ jobs:
         echo "----------------------------"
         echo "Vault setup and verification completed successfully!"
       
-    # Trigger CI Pipeline
+    # טריגר ל-CI Pipeline
     - name: Trigger CI Pipeline
       if: success()
       uses: peter-evans/repository-dispatch@v2
