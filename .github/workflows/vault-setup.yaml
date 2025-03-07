@@ -14,9 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     environment: production
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v3
+
     - name: Azure Login
       uses: azure/login@v1
       with:
@@ -84,28 +86,33 @@ jobs:
         
         # יצירת ServiceAccount עם הרשאות מתאימות
         echo "Creating service account with proper permissions..."
+        
         # יצירת ServiceAccount vault-auth
         kubectl create serviceaccount vault-auth -n vault --dry-run=client -o yaml | kubectl apply -f -
+        
         # יצירת ClusterRoleBinding לשירות האקאונט
-        cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: vault-auth-binding
-subjects:
-  - kind: ServiceAccount
-    name: vault-auth
-    namespace: vault
-roleRef:
-  kind: ClusterRole
-  name: system:auth-delegator
-  apiGroup: rbac.authorization.k8s.io
-EOF
+        cat << EOF | kubectl apply -f -
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: vault-auth-binding
+        subjects:
+        - kind: ServiceAccount
+          name: vault-auth
+          namespace: vault
+        roleRef:
+          kind: ClusterRole
+          name: system:auth-delegator
+          apiGroup: rbac.authorization.k8s.io
+        EOF
+        
         # המתנה קצרה כדי לוודא שכל המשאבים נוצרו
         echo "Waiting for service account to be fully created..."
         sleep 10
+        
         # אימות שהשירות אקאונט קיים
         kubectl get serviceaccount vault-auth -n vault
+        
         # יצירת Token
         echo "Creating token for Kubernetes authentication..."
         TOKEN_REVIEW_JWT=$(kubectl create token vault-auth -n vault)
@@ -128,11 +135,11 @@ EOF
         
         # הגדרת מדיניות
         echo "Creating policy for database secrets..."
-        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/gifapp-policy.hcl <<EOF
-path "gifapp/data/database" {
-  capabilities = ["read"]
-}
-EOF'
+        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/gifapp-policy.hcl << EOF
+        path "gifapp/data/database" {
+          capabilities = ["read"]
+        }
+        EOF'
         
         kubectl exec -n vault $VAULT_POD -- vault policy write gifapp-policy /tmp/gifapp-policy.hcl
         
@@ -154,7 +161,7 @@ EOF'
         # בדיקה של SecretProviderClass
         if ! kubectl get secretproviderclass gifapp-vault-database -n gifapp &>/dev/null; then
           echo "Creating SecretProviderClass..."
-          cat > secretproviderclass.yaml <<EOF
+          cat > secretproviderclass.yaml << 'EOF'
 apiVersion: secrets-store.csi.x-k8s.io/v1
 kind: SecretProviderClass
 metadata:
@@ -164,8 +171,57 @@ spec:
   provider: vault
   parameters:
     vaultAddress: "http://vault.vault.svc.cluster.local:8200"
+    roleName: "flask-app"
+    objects: |
+      - objectName: "db-user"
+        secretPath: "gifapp/data/database"
+        secretKey: "DB_USER"
+      - objectName: "db-password"
+        secretPath: "gifapp/data/database"
+        secretKey: "DB_PASSWORD"
+      - objectName: "db-name"
+        secretPath: "gifapp/data/database"
+        secretKey: "DB_NAME"
+      - objectName: "db-port"
+        secretPath: "gifapp/data/database"
+        secretKey: "DB_PORT"
+  secretObjects:
+    - secretName: gifapp-mysql-secrets
+      type: Opaque
+      data:
+        - objectName: "db-user"
+          key: DB_USER
+        - objectName: "db-password"
+          key: DB_PASSWORD
+        - objectName: "db-name"
+          key: DB_NAME
+        - objectName: "db-port"
+          key: DB_PORT
 EOF
+          
           kubectl apply -f secretproviderclass.yaml
         else
           echo "SecretProviderClass already exists."
         fi
+
+    - name: Verify Vault Configuration
+      run: |
+        echo "Verifying Vault configuration..."
+        kubectl get pods -n vault
+        
+        echo "Checking service accounts:"
+        kubectl get serviceaccounts -n vault
+        
+        echo "Checking Vault status:"
+        VAULT_IP=$(kubectl get svc vault-ui -n vault -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "Vault UI is available at: http://$VAULT_IP:8200"
+        echo "Default token in dev mode: root"
+        
+        echo "Vault setup completed successfully!"
+
+    - name: Trigger CI Pipeline
+      if: success()
+      uses: peter-evans/repository-dispatch@v2
+      with:
+        token: ${{ secrets.GH_PAT }}
+        event-type: start-ci-pipeline
