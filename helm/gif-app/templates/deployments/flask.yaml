@@ -26,7 +26,7 @@ spec:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
-              secretProviderClass: {{ .Release.Name }}-vault-database
+              secretProviderClass: gifapp-vault-database
       {{- end }}
       containers:
         - name: flask-app

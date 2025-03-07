@@ -113,6 +113,136 @@ jobs:
         echo "Username: admin"
         echo "Password: $GRAFANA_PASSWORD"
 
+    - name: Check Vault Status
+      run: |
+        # בדיקה שהוולט רץ
+        if ! kubectl get pods -n vault | grep vault-0 | grep -q Running; then
+          echo "Vault is not running, installing it now..."
+          kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+          
+          # התקנת Vault
+          helm repo add hashicorp https://helm.releases.hashicorp.com
+          helm repo update
+          helm install vault hashicorp/vault \
+            --namespace vault \
+            --set "server.dev.enabled=true" \
+            --set "ui.enabled=true" \
+            --set "ui.serviceType=LoadBalancer"
+          
+          # המתנה שהוולט יהיה מוכן
+          kubectl wait --for=condition=ready pod vault-0 -n vault --timeout=180s || true
+          
+          # התקנת CSI Driver
+          helm repo add secrets-store-csi-driver https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
+          helm install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver \
+            --namespace kube-system \
+            --set syncSecret.enabled=true
+          
+          # התקנת Vault CSI Provider
+          kubectl apply -f https://raw.githubusercontent.com/hashicorp/vault-csi-provider/main/deployment/vault-csi-provider.yaml
+          
+          # הגדרת הסודות בוולט
+          export VAULT_POD="vault-0"
+          
+          # המתנה שהוולט יהיה מוכן
+          echo "Waiting for Vault to be ready..."
+          sleep 30
+          
+          # הגדרת מנוע הסודות
+          kubectl exec -n vault $VAULT_POD -- vault secrets enable -path=gifapp kv-v2 || true
+          
+          # העלאת הסודות לוולט
+          kubectl exec -n vault $VAULT_POD -- vault kv put gifapp/database \
+            DB_USER="${{ secrets.DB_USER }}" \
+            DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            DB_NAME="${{ secrets.DB_NAME }}" \
+            DB_PORT="${{ secrets.DB_PORT || '3306' }}"
+          
+          # הגדרת אימות Kubernetes
+          kubectl exec -n vault $VAULT_POD -- vault auth enable kubernetes || true
+          
+          # הגדרת קונפיגורציית Kubernetes ב-Vault
+          TOKEN_REVIEW_JWT=$(kubectl create token vault-auth -n vault)
+          KUBE_HOST="https://kubernetes.default.svc.cluster.local"
+          
+          kubectl exec -n vault $VAULT_POD -- vault write auth/kubernetes/config \
+            token_reviewer_jwt="$TOKEN_REVIEW_JWT" \
+            kubernetes_host="$KUBE_HOST" || true
+          
+          # הגדרת מדיניות
+          kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/gifapp-policy.hcl << EOF
+          path "gifapp/data/database" {
+            capabilities = ["read"]
+          }
+          EOF'
+          
+          kubectl exec -n vault $VAULT_POD -- vault policy write gifapp-policy /tmp/gifapp-policy.hcl
+          
+          # יצירת ServiceAccount
+          kubectl create serviceaccount flask-app-sa -n gifapp --dry-run=client -o yaml | kubectl apply -f -
+          
+          # הגדרת תפקיד
+          kubectl exec -n vault $VAULT_POD -- vault write auth/kubernetes/role/flask-app \
+            bound_service_account_names=flask-app-sa \
+            bound_service_account_namespaces=gifapp \
+            policies=gifapp-policy \
+            ttl=1h
+        else
+          echo "Vault is already running, updating secrets..."
+          export VAULT_POD="vault-0"
+          
+          # עדכון הסודות
+          kubectl exec -n vault $VAULT_POD -- vault kv put gifapp/database \
+            DB_USER="${{ secrets.DB_USER }}" \
+            DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            DB_NAME="${{ secrets.DB_NAME }}" \
+            DB_PORT="${{ secrets.DB_PORT || '3306' }}"
+        fi
+        
+        # בדיקה של SecretProviderClass
+        if ! kubectl get secretproviderclass gifapp-vault-database -n gifapp &>/dev/null; then
+          echo "Creating SecretProviderClass..."
+          cat > secretproviderclass.yaml << EOF
+          apiVersion: secrets-store.csi.x-k8s.io/v1
+          kind: SecretProviderClass
+          metadata:
+            name: gifapp-vault-database
+            namespace: gifapp
+          spec:
+            provider: vault
+            parameters:
+              vaultAddress: "http://vault.vault.svc.cluster.local:8200"
+              roleName: "flask-app"
+              objects: |
+                - objectName: "db-user"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_USER"
+                - objectName: "db-password"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_PASSWORD"
+                - objectName: "db-name"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_NAME"
+                - objectName: "db-port"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_PORT"
+            secretObjects:
+              - secretName: gifapp-mysql-secrets
+                type: Opaque
+                data:
+                  - objectName: "db-user"
+                    key: DB_USER
+                  - objectName: "db-password"
+                    key: DB_PASSWORD
+                  - objectName: "db-name"
+                    key: DB_NAME
+                  - objectName: "db-port"
+                    key: DB_PORT
+          EOF
+          
+          kubectl apply -f secretproviderclass.yaml
+        fi
+
     - name: Add Helm Repository
       run: |
         helm repo add helm-charts https://OrelNeto-DO.github.io/helm-charts
@@ -138,7 +268,7 @@ jobs:
           --set flask.service.type=LoadBalancer \
           --set flask.service.port=80 \
           --set flask.service.targetPort=5000 \
-          --set flask.replicas=2 \
+          --set flask.replicas=1 \
           --set mysql.image.tag=5.7 \
           --set mysql.persistence.storageClass=managed-premium \
           --set mysql.persistence.size=10Gi \

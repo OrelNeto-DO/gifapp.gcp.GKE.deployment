@@ -1,22 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-flask
+  name: {{ .Release.Name }}-mysql
   labels:
-    app: flask-app
+    app: mysql
 spec:
-  replicas: {{ .Values.flask.replicas }}
+  replicas: {{ .Values.mysql.replicas }}
   selector:
     matchLabels:
-      app: flask-app
+      app: mysql
   template:
     metadata:
       labels:
-        app: flask-app
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "5000"
-        prometheus.io/path: "/metrics"
+        app: mysql
     spec:
       {{- if .Values.vault.enabled }}
       serviceAccountName: {{ .Values.vault.serviceAccount }}
@@ -26,23 +22,59 @@ spec:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
-              secretProviderClass: {{ .Release.Name }}-vault-database
+              secretProviderClass: gifapp-vault-database
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-mysql-pvc
+        - name: init-sql
+          configMap:
+            name: {{ .Release.Name }}-mysql-init-sql
+      {{- else }}
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-mysql-pvc
+        - name: init-sql
+          configMap:
+            name: {{ .Release.Name }}-mysql-init-sql
       {{- end }}
+      initContainers:
+        - name: remove-lost-found
+          image: busybox
+          command: ["rm", "-rf", "/var/lib/mysql/lost+found"]
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
       containers:
-        - name: flask-app
-          image: "{{ .Values.flask.image.repository }}:{{ .Values.flask.image.tag }}"
-          imagePullPolicy: {{ .Values.flask.image.pullPolicy }}
+        - name: mysql
+          image: "{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
           {{- if .Values.vault.enabled }}
           volumeMounts:
             - name: secrets-store-db
               mountPath: "/mnt/secrets-store"
               readOnly: true
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+          {{- else }}
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
           {{- end }}
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-mysql-secrets
+                  key: DB_PASSWORD
+            - name: MYSQL_ROOT_HOST
+              value: "%"
+            - name: MYSQL_DATABASE
+              value: {{ .Values.database.name | quote }}
           ports:
-            - containerPort: {{ .Values.flask.service.targetPort }}
-              name: http
-          envFrom:
-            - configMapRef:
-                name: {{ .Release.Name }}-flask-config
-            - secretRef:
-                name: {{ .Release.Name }}-mysql-secrets
+            - containerPort: {{ .Values.mysql.service.port }}
+              name: mysql
