@@ -64,7 +64,7 @@ jobs:
             --namespace kube-system \
             --set syncSecret.enabled=true
           
-          # התקנת Vault Provider - תיקון כאן
+          # התקנת Vault CSI Provider - תיקון כאן: לא דרך Helm אלא ישירות
           echo "Installing Vault CSI Provider..."
           kubectl apply -f https://raw.githubusercontent.com/hashicorp/vault-csi-provider/main/deployment/vault-csi-provider.yaml
         else

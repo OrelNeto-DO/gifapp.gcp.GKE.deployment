@@ -18,10 +18,26 @@ spec:
         prometheus.io/port: "5000"
         prometheus.io/path: "/metrics"
     spec:
+      {{- if .Values.vault.enabled }}
+      serviceAccountName: {{ .Values.vault.serviceAccount }}
+      volumes:
+        - name: secrets-store-db
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-vault-database
+      {{- end }}
       containers:
         - name: flask-app
           image: "{{ .Values.flask.image.repository }}:{{ .Values.flask.image.tag }}"
           imagePullPolicy: {{ .Values.flask.image.pullPolicy }}
+          {{- if .Values.vault.enabled }}
+          volumeMounts:
+            - name: secrets-store-db
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          {{- end }}
           ports:
             - containerPort: {{ .Values.flask.service.port }}
               name: http
