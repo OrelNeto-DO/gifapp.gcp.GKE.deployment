@@ -12,15 +12,15 @@ jobs:
   setup-vault:
     name: 'Setup Vault and Configure Secrets'
     runs-on: ubuntu-latest
-    if: <span class="math-inline">\{\{ github\.event\.workflow\_run\.conclusion \=\= 'success' \|\| github\.event\_name \=\= 'workflow\_dispatch' \}\}
-environment\: production
-steps\:
-\- name\: Checkout Repository
-uses\: actions/checkout@v3
-\- name\: Azure Login
-uses\: azure/login@v1
-with\:
-creds\: '\{"clientId"\:"</span>{{ secrets.AZURE_CLIENT_ID }}","clientSecret":"<span class="math-inline">\{\{ secrets\.AZURE\_CLIENT\_SECRET \}\}","subscriptionId"\:"</span>{{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    environment: production
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
 
     - name: Get AKS Credentials
       run: |
@@ -73,47 +73,48 @@ creds\: '\{"clientId"\:"</span>{{ secrets.AZURE_CLIENT_ID }}","clientSecret":"<s
         
         # העלאת הסודות לוולט
         echo "Updating secrets in Vault..."
-        kubectl exec -n vault <span class="math-inline">VAULT\_POD \-\- vault kv put gifapp/database \\
-DB\_USER\="</span>{{ secrets.DB_USER }}" \
-          DB_PASSWORD="<span class="math-inline">\{\{ secrets\.DB\_PASSWORD \}\}" \\
-DB\_NAME\="</span>{{ secrets.DB_NAME }}" \
+        kubectl exec -n vault $VAULT_POD -- vault kv put gifapp/database \
+          DB_USER="${{ secrets.DB_USER }}" \
+          DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+          DB_NAME="${{ secrets.DB_NAME }}" \
           DB_PORT="${{ secrets.DB_PORT || '3306' }}"
         
         # הגדרת אימות Kubernetes
-        kubectl exec -n vault <span class="math-inline">VAULT\_POD \-\- vault auth enable kubernetes \|\| true
-\# יצירת ServiceAccount עם הרשאות מתאימות
-echo "Creating service account with proper permissions\.\.\."
-\# יצירת ServiceAccount vault\-auth
-kubectl create serviceaccount vault\-auth \-n vault \-\-dry\-run\=client \-o yaml \| kubectl apply \-f \-
-\# יצירת ClusterRoleBinding לשירות האקאונט
-cat << EOF \| kubectl apply \-f \-
-apiVersion\: rbac\.authorization\.k8s\.io/v1
-kind\: ClusterRoleBinding
-metadata\:
-name\: vault\-auth\-binding
-subjects\:
-\- kind\: ServiceAccount
-name\: vault\-auth
-namespace\: vault
-roleRef\:
-kind\: ClusterRole
-name\: system\:auth\-delegator
-apiGroup\: rbac\.authorization\.k8s\.io
+        kubectl exec -n vault $VAULT_POD -- vault auth enable kubernetes || true
+        
+        # יצירת ServiceAccount עם הרשאות מתאימות
+        echo "Creating service account with proper permissions..."
+        # יצירת ServiceAccount vault-auth
+        kubectl create serviceaccount vault-auth -n vault --dry-run=client -o yaml | kubectl apply -f -
+        # יצירת ClusterRoleBinding לשירות האקאונט
+        cat << EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-binding
+subjects:
+  - kind: ServiceAccount
+    name: vault-auth
+    namespace: vault
+roleRef:
+  kind: ClusterRole
+  name: system:auth-delegator
+  apiGroup: rbac.authorization.k8s.io
 EOF
-\# המתנה קצרה כדי לוודא שכל המשאבים נוצרו
-echo "Waiting for service account to be fully created\.\.\."
-sleep 10
-\# אימות שהשירות אקאונט קיים
-kubectl get serviceaccount vault\-auth \-n vault
-\# יצירת Token
-echo "Creating token for Kubernetes authentication\.\.\."
-TOKEN\_REVIEW\_JWT\=</span>(kubectl create token vault-auth -n vault)
+        # המתנה קצרה כדי לוודא שכל המשאבים נוצרו
+        echo "Waiting for service account to be fully created..."
+        sleep 10
+        # אימות שהשירות אקאונט קיים
+        kubectl get serviceaccount vault-auth -n vault
+        # יצירת Token
+        echo "Creating token for Kubernetes authentication..."
+        TOKEN_REVIEW_JWT=$(kubectl create token vault-auth -n vault)
         
         # בדיקה שהטוקן נוצר בהצלחה
-        if [ -z "<span class="math-inline">TOKEN\_REVIEW\_JWT" \]; then
-echo "Failed to create token, trying alternative approach\.\.\."
-\# ניסיון לשימוש בטוקן של פוד ה\-Vault עצמו
-TOKEN\_REVIEW\_JWT\=</span>(kubectl exec -n vault $VAULT_POD -- cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+        if [ -z "$TOKEN_REVIEW_JWT" ]; then
+          echo "Failed to create token, trying alternative approach..."
+          # ניסיון לשימוש בטוקן של פוד ה-Vault עצמו
+          TOKEN_REVIEW_JWT=$(kubectl exec -n vault $VAULT_POD -- cat /var/run/secrets/kubernetes.io/serviceaccount/token)
         else
           echo "Token created successfully."
         fi
@@ -162,4 +163,9 @@ metadata:
 spec:
   provider: vault
   parameters:
-    vaultAddress: "http://vault.vault.svc.cluster.local:820
+    vaultAddress: "http://vault.vault.svc.cluster.local:8200"
+EOF
+          kubectl apply -f secretproviderclass.yaml
+        else
+          echo "SecretProviderClass already exists."
+        fi
