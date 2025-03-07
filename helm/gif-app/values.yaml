@@ -2,13 +2,13 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.67
+    tag: 1.0.66
     pullPolicy: IfNotPresent
   service:
-    type: LoadBalancer  # שינוי מ-NodePort ל-LoadBalancer
-    port: 80  # שינוי ל-80 במקום 5000 (סטנדרטי יותר)
-    targetPort: 5000  # התוכנה עדיין מאזינה על 5000
-  replicas: 2  # הגדלנו ל-2 להגברת זמינות
+    type: LoadBalancer
+    port: 80
+    targetPort: 5000
+  replicas: 2
 
 mysql:
   image:
@@ -21,8 +21,8 @@ mysql:
   replicas: 1
   persistence:
     enabled: true
-    storageClass: "managed-premium"  # שינוי ל-Storage Class של Azure
-    size: 10Gi  # הגדלת הנפח ל-10Gi למניעת בעיות ביצועים
+    storageClass: "managed-premium"
+    size: 10Gi
   
 # Database Configuration
 database:
@@ -37,7 +37,7 @@ initScript:
 
 # Ingress Configuration
 ingress:
-  enabled: false  # יופעל בשלב מאוחר יותר
+  enabled: false
   className: "nginx"
   annotations:
     kubernetes.io/ingress.class: nginx
@@ -46,3 +46,18 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+
+# Vault Integration
+vault:
+  enabled: false  # הפוך ל-true כאשר מוכן להשתמש ב-Vault
+  address: "http://vault.vault.svc.cluster.local:8200"
+  serviceAccount: "flask-app-sa"
+  database:
+    secretPath: "gifapp/database"
+    roleName: "flask-app"
+  cicd:
+    secretPath: "gifapp/cicd"
+    roleName: "cicd-app"
+  azure:
+    secretPath: "gifapp/azure"
+    roleName: "cicd-app"

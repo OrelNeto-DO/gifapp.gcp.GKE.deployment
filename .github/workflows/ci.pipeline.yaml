@@ -5,7 +5,7 @@ permissions:
 
 on:
   workflow_run:
-    workflows: ["Terraform AKS Deployment"]
+    workflows: ["Vault Setup and Secret Management"]
     types:
       - completed
     branches: [main]
