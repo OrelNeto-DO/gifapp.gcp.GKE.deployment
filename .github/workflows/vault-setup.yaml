@@ -129,10 +129,10 @@ EOF
         # הגדרת מדיניות
         echo "Creating policy for database secrets..."
         kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/gifapp-policy.hcl << EOF
-        path "gifapp/data/database" {
-          capabilities = ["read"]
-        }
-        EOF'
+path "gifapp/data/database" {
+  capabilities = ["read"]
+}
+EOF'
         
         kubectl exec -n vault $VAULT_POD -- vault policy write gifapp-policy /tmp/gifapp-policy.hcl
         
