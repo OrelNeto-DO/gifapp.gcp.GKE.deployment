@@ -87,7 +87,7 @@ jobs:
         # יצירת ServiceAccount vault-auth
         kubectl create serviceaccount vault-auth -n vault --dry-run=client -o yaml | kubectl apply -f -
         # יצירת ClusterRoleBinding לשירות האקאונט
-        cat << EOF | kubectl apply -f -
+        cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -128,7 +128,7 @@ EOF
         
         # הגדרת מדיניות
         echo "Creating policy for database secrets..."
-        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/gifapp-policy.hcl << EOF
+        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/gifapp-policy.hcl <<EOF
 path "gifapp/data/database" {
   capabilities = ["read"]
 }
@@ -154,7 +154,7 @@ EOF'
         # בדיקה של SecretProviderClass
         if ! kubectl get secretproviderclass gifapp-vault-database -n gifapp &>/dev/null; then
           echo "Creating SecretProviderClass..."
-          cat > secretproviderclass.yaml << EOF
+          cat > secretproviderclass.yaml <<EOF
 apiVersion: secrets-store.csi.x-k8s.io/v1
 kind: SecretProviderClass
 metadata:
