@@ -141,4 +141,25 @@ TOKEN\_REVIEW\_JWT\=</span>(kubectl exec -n vault $VAULT_POD -- cat /var/run/sec
         kubectl create serviceaccount flask-app-sa -n gifapp --dry-run=client -o yaml | kubectl apply -f -
         
         # הגדרת תפקיד
-        echo "Creating role for application authentication
+        echo "Creating role for application authentication..."
+        kubectl exec -n vault $VAULT_POD -- vault write auth/kubernetes/role/flask-app \
+          bound_service_account_names=flask-app-sa \
+          bound_service_account_namespaces=gifapp \
+          policies=gifapp-policy \
+          ttl=1h
+
+    - name: Configure SecretProviderClass
+      run: |
+        # בדיקה של SecretProviderClass
+        if ! kubectl get secretproviderclass gifapp-vault-database -n gifapp &>/dev/null; then
+          echo "Creating SecretProviderClass..."
+          cat > secretproviderclass.yaml << EOF
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: gifapp-vault-database
+  namespace: gifapp
+spec:
+  provider: vault
+  parameters:
+    vaultAddress: "http://vault.vault.svc.cluster.local:820
