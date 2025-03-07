@@ -1,2 +1,2 @@
-
+VAULT CONFIG
 git commit -am "Backup: current working state with manual secrets (root/rootpassword) applied via kubectl."
