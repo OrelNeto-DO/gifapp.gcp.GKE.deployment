@@ -83,7 +83,7 @@ jobs:
           # יצירת ServiceAccount vault-auth
           kubectl create serviceaccount vault-auth -n vault --dry-run=client -o yaml | kubectl apply -f -
           # יצירת ClusterRoleBinding לשירות האקאונט
-          cat << EOF | kubectl apply -f -
+          cat <<-'EOF' | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -206,7 +206,7 @@ EOF
           echo "Vault setup completed successfully!"
 
       - name: Trigger CI Pipeline
-        if: ${{ success() }}
+        if: success()
         uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.GH_PAT }}
