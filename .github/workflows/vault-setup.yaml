@@ -26,10 +26,7 @@ jobs:
 
     - name: Get AKS Credentials
       run: |
-        # התחברות ל-AKS
         az aks get-credentials --resource-group orel-neto-project --name gifapp-aks --admin
-        
-        # בדיקת חיבור
         kubectl get nodes
 
     - name: Install and Configure Vault
@@ -85,6 +82,9 @@ jobs:
         # הגדרת אימות Kubernetes
         kubectl exec -n vault $VAULT_POD -- vault auth enable kubernetes || true
         
+        # יצירת ServiceAccount לאימות Vault
+        kubectl create serviceaccount vault-auth -n vault --dry-run=client -o yaml | kubectl apply -f -
+        
         # הגדרת קונפיגורציית Kubernetes ב-Vault
         TOKEN_REVIEW_JWT=$(kubectl create token vault-auth -n vault)
         KUBE_HOST="https://kubernetes.default.svc.cluster.local"
@@ -102,7 +102,7 @@ jobs:
         
         kubectl exec -n vault $VAULT_POD -- vault policy write gifapp-policy /tmp/gifapp-policy.hcl
         
-        # יצירת ServiceAccount
+        # יצירת ServiceAccount לאפליקציה
         kubectl create namespace gifapp --dry-run=client -o yaml | kubectl apply -f -
         kubectl create serviceaccount flask-app-sa -n gifapp --dry-run=client -o yaml | kubectl apply -f -
         
