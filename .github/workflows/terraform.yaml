@@ -64,9 +64,10 @@ jobs:
         az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --file kubeconfig.yaml
         echo "Kubeconfig saved to kubeconfig.yaml"
     
-    - name: Trigger CI Pipeline
+    # שינוי כאן - במקום להפעיל את ה-CI ישירות, אנו מפעילים את ה-Vault
+    - name: Trigger Vault Pipeline
       if: success()
       uses: peter-evans/repository-dispatch@v2
       with:
         token: ${{ secrets.GH_PAT }}
-        event-type: start-ci-pipeline
+        event-type: start-vault-pipeline

@@ -1,13 +1,9 @@
 name: Vault Setup and Secret Management
 
 on:
-  workflow_run:
-    workflows: ["Terraform AKS Deployment"]
-    types:
-      - completed
-    branches: [main]
-  
-  # אפשרות להפעלה ידנית
+  # שינוי כאן - במקום workflow_run, נשתמש ב-repository_dispatch
+  repository_dispatch:
+    types: [start-vault-pipeline]
   workflow_dispatch:
     inputs:
       update_only:
@@ -19,8 +15,6 @@ jobs:
   setup-vault:
     name: 'Setup Vault and Configure Secrets'
     runs-on: ubuntu-latest
-    # רק אם הטרפורם רץ בהצלחה או שהופעל ידנית
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     environment: production
 
     steps:
@@ -207,7 +201,7 @@ jobs:
         echo "----------------------------"
         echo "Vault setup and verification completed successfully!"
       
-    # טריגר ל-CI Pipeline
+    # טריגר ל-CI Pipeline - לא משתנה
     - name: Trigger CI Pipeline
       if: success()
       uses: peter-evans/repository-dispatch@v2
