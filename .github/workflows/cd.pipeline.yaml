@@ -115,7 +115,7 @@ jobs:
 
     - name: Add Helm Repository
       run: |
-        helm repo add orel-charts https://OrelNeto-DO.github.io/helm-charts
+        helm repo add helm-charts https://OrelNeto-DO.github.io/helm-charts
         helm repo update
 
     - name: Deploy GifApp
@@ -132,7 +132,7 @@ jobs:
         echo "Deploying GifApp version: $VERSION"
         
         # Install GifApp with correct values and monitoring enabled
-        helm upgrade --install gifapp orel-charts/gif-app \
+        helm upgrade --install gifapp helm-charts/gif-app \
           --namespace gifapp --create-namespace \
           --set flask.image.tag=$VERSION \
           --set flask.service.type=LoadBalancer \
@@ -142,9 +142,11 @@ jobs:
           --set mysql.image.tag=5.7 \
           --set mysql.persistence.storageClass=managed-premium \
           --set mysql.persistence.size=10Gi \
-          --set database.name=${{ secrets.DB_NAME }} \
-          --set database.user=${{ secrets.DB_USER }} \
-          --set database.password=${{ secrets.DB_PASSWORD }} \
+          --set vault.enabled=true \
+          --set vault.address="http://vault.vault.svc.cluster.local:8200" \
+          --set vault.serviceAccount="flask-app-sa" \
+          --set vault.database.secretPath="gifapp/database" \
+          --set vault.database.roleName="flask-app" \
           --set serviceMonitor.enabled=true
           
     - name: Verify Deployment

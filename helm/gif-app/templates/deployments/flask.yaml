@@ -39,7 +39,7 @@ spec:
               readOnly: true
           {{- end }}
           ports:
-            - containerPort: {{ .Values.flask.service.port }}
+            - containerPort: {{ .Values.flask.service.targetPort }}
               name: http
           envFrom:
             - configMapRef:

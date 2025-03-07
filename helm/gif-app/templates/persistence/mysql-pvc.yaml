@@ -1,4 +1,3 @@
-{{- if .Values.mysql.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -8,8 +7,9 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: {{ .Values.mysql.persistence.storageClass }}
   resources:
     requests:
       storage: {{ .Values.mysql.persistence.size }}
-{{- end }}
+  {{- if .Values.mysql.persistence.storageClass }}
+  storageClassName: {{ .Values.mysql.persistence.storageClass }}
+  {{- end }}
