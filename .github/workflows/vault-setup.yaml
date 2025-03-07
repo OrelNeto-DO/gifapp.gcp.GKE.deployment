@@ -206,7 +206,7 @@ EOF
           echo "Vault setup completed successfully!"
 
       - name: Trigger CI Pipeline
-        if: success()
+        if: ${{ success() }}
         uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.GH_PAT }}
