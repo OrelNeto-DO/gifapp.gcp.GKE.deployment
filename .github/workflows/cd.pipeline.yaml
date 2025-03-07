@@ -131,6 +131,9 @@ jobs:
         
         echo "Deploying GifApp version: $VERSION"
         
+        # Remove existing SecretProviderClass to avoid conflicts
+        kubectl delete secretproviderclass gifapp-vault-database -n gifapp --ignore-not-found=true
+        
         # Install GifApp with correct values and monitoring enabled
         helm upgrade --install gifapp helm-charts/gif-app \
           --namespace gifapp --create-namespace \

@@ -155,54 +155,6 @@ jobs:
           policies=gifapp-policy \
           ttl=1h
 
-    - name: Configure SecretProviderClass
-      run: |
-        # בדיקה של SecretProviderClass
-        if ! kubectl get secretproviderclass gifapp-vault-database -n gifapp &>/dev/null; then
-          echo "Creating SecretProviderClass..."
-          
-          # יצירת קובץ ה-SecretProviderClass שורה אחר שורה
-          echo "apiVersion: secrets-store.csi.x-k8s.io/v1" > spc.yaml
-          echo "kind: SecretProviderClass" >> spc.yaml
-          echo "metadata:" >> spc.yaml
-          echo "  name: gifapp-vault-database" >> spc.yaml
-          echo "  namespace: gifapp" >> spc.yaml
-          echo "spec:" >> spc.yaml
-          echo "  provider: vault" >> spc.yaml
-          echo "  parameters:" >> spc.yaml
-          echo "    vaultAddress: \"http://vault.vault.svc.cluster.local:8200\"" >> spc.yaml
-          echo "    roleName: \"flask-app\"" >> spc.yaml
-          echo "    objects: |" >> spc.yaml
-          echo "      - objectName: \"db-user\"" >> spc.yaml
-          echo "        secretPath: \"gifapp/data/database\"" >> spc.yaml
-          echo "        secretKey: \"DB_USER\"" >> spc.yaml
-          echo "      - objectName: \"db-password\"" >> spc.yaml
-          echo "        secretPath: \"gifapp/data/database\"" >> spc.yaml
-          echo "        secretKey: \"DB_PASSWORD\"" >> spc.yaml
-          echo "      - objectName: \"db-name\"" >> spc.yaml
-          echo "        secretPath: \"gifapp/data/database\"" >> spc.yaml
-          echo "        secretKey: \"DB_NAME\"" >> spc.yaml
-          echo "      - objectName: \"db-port\"" >> spc.yaml
-          echo "        secretPath: \"gifapp/data/database\"" >> spc.yaml
-          echo "        secretKey: \"DB_PORT\"" >> spc.yaml
-          echo "  secretObjects:" >> spc.yaml
-          echo "    - secretName: gifapp-mysql-secrets" >> spc.yaml
-          echo "      type: Opaque" >> spc.yaml
-          echo "      data:" >> spc.yaml
-          echo "        - objectName: \"db-user\"" >> spc.yaml
-          echo "          key: DB_USER" >> spc.yaml
-          echo "        - objectName: \"db-password\"" >> spc.yaml
-          echo "          key: DB_PASSWORD" >> spc.yaml
-          echo "        - objectName: \"db-name\"" >> spc.yaml
-          echo "          key: DB_NAME" >> spc.yaml
-          echo "        - objectName: \"db-port\"" >> spc.yaml
-          echo "          key: DB_PORT" >> spc.yaml
-          
-          kubectl apply -f spc.yaml
-        else
-          echo "SecretProviderClass already exists."
-        fi
-
     - name: Verify Vault Configuration
       run: |
         echo "Verifying Vault configuration..."
