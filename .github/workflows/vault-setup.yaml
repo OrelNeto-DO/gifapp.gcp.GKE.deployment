@@ -1,19 +1,18 @@
 name: Vault Setup and Secret Management
 
 on:
-  repository_dispatch:
-    types: [start-vault-pipeline]
+  workflow_run:
+    workflows: ["Terraform AKS Deployment"]
+    types:
+      - completed
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      update_only:
-        description: 'Update secrets only (no reinstall)'
-        required: false
-        default: 'false'
 
 jobs:
   setup-vault:
     name: 'Setup Vault and Configure Secrets'
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     environment: production
 
     steps:
@@ -33,173 +32,146 @@ jobs:
         # בדיקת חיבור
         kubectl get nodes
 
-    - name: Install Vault
-      if: ${{ github.event.inputs.update_only != 'true' }}
+    - name: Install and Configure Vault
       run: |
-        # בדיקה אם Vault כבר מותקן
-        if ! kubectl get namespace vault &>/dev/null; then
-          echo "Creating vault namespace..."
-          kubectl create namespace vault
+        # בדיקה שהוולט רץ
+        if ! kubectl get pods -n vault | grep vault-0 | grep -q Running; then
+          echo "Vault is not running, installing it now..."
+          kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
           
-          # הוספת repo של HashiCorp והתקנת Vault
-          echo "Adding HashiCorp Helm repo..."
+          # התקנת Vault
           helm repo add hashicorp https://helm.releases.hashicorp.com
           helm repo update
-          
-          echo "Installing Vault..."
           helm install vault hashicorp/vault \
             --namespace vault \
             --set "server.dev.enabled=true" \
             --set "ui.enabled=true" \
             --set "ui.serviceType=LoadBalancer"
           
-          # המתנה שה-Vault יהיה מוכן
-          echo "Waiting for Vault to be ready..."
-          kubectl wait --for=condition=ready pod vault-0 -n vault --timeout=180s
+          # המתנה שהוולט יהיה מוכן
+          kubectl wait --for=condition=ready pod vault-0 -n vault --timeout=180s || true
           
           # התקנת CSI Driver
-          echo "Installing CSI Driver..."
           helm repo add secrets-store-csi-driver https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
           helm install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver \
             --namespace kube-system \
             --set syncSecret.enabled=true
           
-          # התקנת Vault CSI Provider - תיקון כאן: לא דרך Helm אלא ישירות
-          echo "Installing Vault CSI Provider..."
+          # התקנת Vault CSI Provider
           kubectl apply -f https://raw.githubusercontent.com/hashicorp/vault-csi-provider/main/deployment/vault-csi-provider.yaml
+          
+          # הגדרת הסודות בוולט
+          export VAULT_POD="vault-0"
+          
+          # המתנה שהוולט יהיה מוכן
+          echo "Waiting for Vault to be ready..."
+          sleep 30
         else
-          echo "Vault is already installed."
+          echo "Vault is already running."
+          export VAULT_POD="vault-0"
         fi
         
-        # הצגת הכתובת של ממשק המשתמש של Vault
-        VAULT_IP=$(kubectl get svc vault-ui -n vault -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-        echo "Vault UI is available at: http://$VAULT_IP:8200"
-        echo "Default token in dev mode: root"
-
-    - name: Configure Vault and Load Secrets
-      run: |
-        # הגדרת משתני סביבה ל-Vault
-        VAULT_POD="vault-0"
+        # הגדרת מנוע הסודות
+        kubectl exec -n vault $VAULT_POD -- vault secrets enable -path=gifapp kv-v2 || true
         
-        # בדיקה אם מנוע הסודות כבר מוגדר
-        if ! kubectl exec -n vault $VAULT_POD -- vault secrets list | grep -q "gifapp/"; then
-          echo "Enabling KV secrets engine..."
-          kubectl exec -n vault $VAULT_POD -- vault secrets enable -path=gifapp kv-v2
-        fi
-        
-        echo "Storing database secrets in Vault..."
+        # העלאת הסודות לוולט
+        echo "Updating secrets in Vault..."
         kubectl exec -n vault $VAULT_POD -- vault kv put gifapp/database \
           DB_USER="${{ secrets.DB_USER }}" \
           DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
           DB_NAME="${{ secrets.DB_NAME }}" \
           DB_PORT="${{ secrets.DB_PORT || '3306' }}"
         
-        echo "Storing Azure secrets in Vault..."
-        kubectl exec -n vault $VAULT_POD -- vault kv put gifapp/azure \
-          AZURE_CLIENT_ID="${{ secrets.AZURE_CLIENT_ID }}" \
-          AZURE_CLIENT_SECRET="${{ secrets.AZURE_CLIENT_SECRET }}" \
-          AZURE_SUBSCRIPTION_ID="${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-          AZURE_TENANT_ID="${{ secrets.AZURE_TENANT_ID }}"
+        # הגדרת אימות Kubernetes
+        kubectl exec -n vault $VAULT_POD -- vault auth enable kubernetes || true
         
-        echo "Storing CI/CD secrets in Vault..."
-        kubectl exec -n vault $VAULT_POD -- vault kv put gifapp/cicd \
-          DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}" \
-          DOCKERHUB_TOKEN="${{ secrets.DOCKERHUB_TOKEN }}" \
-          GH_PAT="${{ secrets.GH_PAT }}"
+        # הגדרת קונפיגורציית Kubernetes ב-Vault
+        TOKEN_REVIEW_JWT=$(kubectl create token vault-auth -n vault)
+        KUBE_HOST="https://kubernetes.default.svc.cluster.local"
         
-        # בדיקה אם אימות Kubernetes כבר מוגדר
-        if ! kubectl exec -n vault $VAULT_POD -- vault auth list | grep -q "kubernetes/"; then
-          echo "Enabling Kubernetes authentication..."
-          kubectl exec -n vault $VAULT_POD -- vault auth enable kubernetes
-          
-          # יצירת service account אם לא קיים
-          kubectl create serviceaccount vault-auth -n vault --dry-run=client -o yaml | kubectl apply -f -
-          
-          # הגדרת קונפיגורציית Kubernetes ב-Vault
-          TOKEN_REVIEW_JWT=$(kubectl create token vault-auth -n vault)
-          KUBE_HOST="https://kubernetes.default.svc.cluster.local"
-          
-          echo "Setting up Kubernetes authentication in Vault..."
-          kubectl exec -n vault $VAULT_POD -- vault write auth/kubernetes/config \
-            token_reviewer_jwt="$TOKEN_REVIEW_JWT" \
-            kubernetes_host="$KUBE_HOST"
-        fi
+        kubectl exec -n vault $VAULT_POD -- vault write auth/kubernetes/config \
+          token_reviewer_jwt="$TOKEN_REVIEW_JWT" \
+          kubernetes_host="$KUBE_HOST" || true
         
-        # הגדרת מדיניות עבור סודות מסד נתונים
-        echo "Creating database policy..."
-        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/db-policy.hcl << EOF
+        # הגדרת מדיניות
+        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/gifapp-policy.hcl << EOF
         path "gifapp/data/database" {
           capabilities = ["read"]
         }
         EOF'
-        kubectl exec -n vault $VAULT_POD -- vault policy write db-policy /tmp/db-policy.hcl
         
-        # הגדרת מדיניות עבור סודות Azure
-        echo "Creating Azure policy..."
-        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/azure-policy.hcl << EOF
-        path "gifapp/data/azure" {
-          capabilities = ["read"]
-        }
-        EOF'
-        kubectl exec -n vault $VAULT_POD -- vault policy write azure-policy /tmp/azure-policy.hcl
+        kubectl exec -n vault $VAULT_POD -- vault policy write gifapp-policy /tmp/gifapp-policy.hcl
         
-        # הגדרת מדיניות עבור סודות CI/CD
-        echo "Creating CI/CD policy..."
-        kubectl exec -n vault $VAULT_POD -- /bin/sh -c 'cat > /tmp/cicd-policy.hcl << EOF
-        path "gifapp/data/cicd" {
-          capabilities = ["read"]
-        }
-        EOF'
-        kubectl exec -n vault $VAULT_POD -- vault policy write cicd-policy /tmp/cicd-policy.hcl
-        
-        # יצירת ServiceAccount לאפליקציה
-        echo "Creating application service accounts..."
+        # יצירת ServiceAccount
         kubectl create namespace gifapp --dry-run=client -o yaml | kubectl apply -f -
         kubectl create serviceaccount flask-app-sa -n gifapp --dry-run=client -o yaml | kubectl apply -f -
-        kubectl create serviceaccount cicd-sa -n gifapp --dry-run=client -o yaml | kubectl apply -f -
         
-        # הגדרת תפקידים
-        echo "Creating Vault roles for Kubernetes ServiceAccounts..."
+        # הגדרת תפקיד
         kubectl exec -n vault $VAULT_POD -- vault write auth/kubernetes/role/flask-app \
           bound_service_account_names=flask-app-sa \
           bound_service_account_namespaces=gifapp \
-          policies=db-policy \
+          policies=gifapp-policy \
           ttl=1h
-        
-        kubectl exec -n vault $VAULT_POD -- vault write auth/kubernetes/role/cicd-app \
-          bound_service_account_names=cicd-sa \
-          bound_service_account_namespaces=gifapp \
-          policies="azure-policy,cicd-policy" \
-          ttl=1h
-        
-        echo "Vault configuration completed!"
+
+    - name: Configure SecretProviderClass
+      run: |
+        # בדיקה של SecretProviderClass
+        if ! kubectl get secretproviderclass gifapp-vault-database -n gifapp &>/dev/null; then
+          echo "Creating SecretProviderClass..."
+          cat > secretproviderclass.yaml << EOF
+          apiVersion: secrets-store.csi.x-k8s.io/v1
+          kind: SecretProviderClass
+          metadata:
+            name: gifapp-vault-database
+            namespace: gifapp
+          spec:
+            provider: vault
+            parameters:
+              vaultAddress: "http://vault.vault.svc.cluster.local:8200"
+              roleName: "flask-app"
+              objects: |
+                - objectName: "db-user"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_USER"
+                - objectName: "db-password"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_PASSWORD"
+                - objectName: "db-name"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_NAME"
+                - objectName: "db-port"
+                  secretPath: "gifapp/data/database"
+                  secretKey: "DB_PORT"
+            secretObjects:
+              - secretName: gifapp-mysql-secrets
+                type: Opaque
+                data:
+                  - objectName: "db-user"
+                    key: DB_USER
+                  - objectName: "db-password"
+                    key: DB_PASSWORD
+                  - objectName: "db-name"
+                    key: DB_NAME
+                  - objectName: "db-port"
+                    key: DB_PORT
+          EOF
+          
+          kubectl apply -f secretproviderclass.yaml
+        else
+          echo "SecretProviderClass already exists."
+        fi
 
     - name: Verify Vault Configuration
       run: |
-        VAULT_POD="vault-0"
+        echo "Verifying Vault configuration..."
+        kubectl get pods -n vault
         
-        echo "Verifying Vault configuration:"
-        echo "----------------------------"
+        VAULT_IP=$(kubectl get svc vault-ui -n vault -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "Vault UI is available at: http://$VAULT_IP:8200"
+        echo "Default token in dev mode: root"
         
-        # תצוגת מדיניות
-        echo "Policies:"
-        kubectl exec -n vault $VAULT_POD -- vault policy list
-        
-        # תצוגת תפקידים
-        echo "Kubernetes Auth Roles:"
-        kubectl exec -n vault $VAULT_POD -- vault list auth/kubernetes/role
-        
-        # בדיקת נתיבי סודות
-        echo "Secret Paths:"
-        kubectl exec -n vault $VAULT_POD -- vault secrets list
-        
-        echo "Vault UI IP:"
-        kubectl get svc vault-ui -n vault -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-        
-        echo "----------------------------"
-        echo "Vault setup and verification completed successfully!"
-      
-    # טריגר ל-CI Pipeline
+        echo "Vault setup completed successfully!"
+
     - name: Trigger CI Pipeline
       if: success()
       uses: peter-evans/repository-dispatch@v2
