@@ -1,3 +1,5 @@
 now every pipeline is working including VAULT but the app container cannot be created. nice to have
 git commit -am "Backup: current working state with manual secrets (root/rootpassword) applied via kubectl.."
 
+this commit is fine to head to
+
