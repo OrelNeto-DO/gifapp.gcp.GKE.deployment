@@ -2,7 +2,7 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.78
+    tag: 1.0.80  
     pullPolicy: IfNotPresent
   service:
     type: LoadBalancer
@@ -60,5 +60,5 @@ vault:
     secretPath: "gifapp/cicd"
     roleName: "cicd-app"
   azure:
-    secretPath: "gifapp/azure"
+    secretPath: "gifapp/azure" 
     roleName: "cicd-app"
