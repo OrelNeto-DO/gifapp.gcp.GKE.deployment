@@ -148,7 +148,7 @@ jobs:
           --set vault.enabled=true \
           --set vault.address="http://vault.vault.svc.cluster.local:8200" \
           --set vault.serviceAccount="flask-app-sa" \
-          --set vault.database.secretPath="gifapp/database" \
+          --set vault.database.secretPath="gifapp/data/database" \
           --set vault.database.roleName="flask-app" \
           --set serviceMonitor.enabled=true
           
