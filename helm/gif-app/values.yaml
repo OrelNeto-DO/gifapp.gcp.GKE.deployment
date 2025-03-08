@@ -2,7 +2,7 @@
 flask:
   image:
     repository: orelneto/flaskapp_with_db_motogpgif
-    tag: 1.0.79
+    tag: 1.0.78
     pullPolicy: IfNotPresent
   service:
     type: LoadBalancer
@@ -21,14 +21,15 @@ mysql:
   replicas: 1
   persistence:
     enabled: true
-    storageClass: "managed-premium"  # שינוי מ-hostpath ל-managed-premium
+    storageClass: "managed-premium"
     size: 10Gi
   
 # Database Configuration
 database:
-  name: mydatabase
-  user: root
-  password: rootpassword
+  # These values are now stored in Vault and not used directly
+  name: "" # Loaded from Vault
+  user: "" # Loaded from Vault
+  password: "" # Loaded from Vault
   rootHost: "%"
 
 # ConfigMaps and Init Scripts
@@ -49,11 +50,11 @@ ingress:
 
 # Vault Integration
 vault:
-  enabled: false  # נשאיר כ-false לבדיקה ראשונית
+  enabled: true  # Changed to true to use Vault by default
   address: "http://vault.vault.svc.cluster.local:8200"
   serviceAccount: "flask-app-sa"
   database:
-    secretPath: "gifapp/database"
+    secretPath: "gifapp/data/database"  # Updated to correct path
     roleName: "flask-app"
   cicd:
     secretPath: "gifapp/cicd"
