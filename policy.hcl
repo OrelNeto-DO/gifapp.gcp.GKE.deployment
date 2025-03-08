@@ -1,0 +1,1 @@
+path "gifapp/database" {
