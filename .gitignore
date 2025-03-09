@@ -9,6 +9,11 @@ charts/*
 *values-secret.yaml
 *-values.yaml
 
+# Exceptions for monitoring dashboards
+!**/monitoring/dashboards-values.yaml
+!**/monitoring/azure-values.yaml
+!**/monitoring/service-monitor.yaml
+
 # Terraform 
 .terraform/
 *.tfstate
