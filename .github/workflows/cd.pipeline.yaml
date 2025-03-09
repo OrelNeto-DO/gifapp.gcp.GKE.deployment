@@ -95,10 +95,14 @@ jobs:
           enabled: true
         EOF
         
-        # Install Prometheus stack with the updated values
+        # Install Prometheus stack with the updated values and dashboards
         helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
           -f ./helm/monitoring/azure-values.yaml \
+          -f ./helm/monitoring/dashboards-values.yaml \
           --namespace monitoring
+        
+        # Apply ServiceMonitor to monitor GifApp
+        kubectl apply -f ./helm/monitoring/service-monitor.yaml
         
         # Wait for Prometheus components to be ready
         echo "Waiting for Prometheus components to be ready..."
