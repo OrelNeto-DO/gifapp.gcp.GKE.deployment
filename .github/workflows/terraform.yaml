@@ -2,7 +2,7 @@ name: Terraform AKS Deployment
 
 on:
   push:
-    branches: [ main ]
+    branches: [ finals ]
     paths-ignore:
       - '**.md'
   workflow_dispatch:  # Allows manual trigger
