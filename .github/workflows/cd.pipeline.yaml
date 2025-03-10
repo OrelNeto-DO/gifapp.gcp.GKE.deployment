@@ -154,7 +154,8 @@ jobs:
           --set vault.serviceAccount="flask-app-sa" \
           --set vault.database.secretPath="gifapp/data/database" \
           --set vault.database.roleName="flask-app" \
-          --set serviceMonitor.enabled=true
+          --set serviceMonitor.enabled=true \
+          --set database.name="mydatabase"
           
     - name: Verify Deployment
       run: |

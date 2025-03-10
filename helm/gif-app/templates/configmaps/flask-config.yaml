@@ -6,7 +6,7 @@ metadata:
     app: flask-app
 data:
   DB_HOST: "{{ .Release.Name }}-mysql"
-  DB_NAME: "{{ .Values.database.name }}"
+  DB_NAME: "{{ if .Values.database.name }}{{ .Values.database.name }}{{ else }}mydatabase{{ end }}"
   DB_PORT: "{{ .Values.mysql.service.port }}"
   FLASK_ENV: "development"
   PORT: "5000"

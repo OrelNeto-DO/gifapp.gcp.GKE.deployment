@@ -6,8 +6,8 @@ metadata:
     app: mysql
 data:
   init.sql: |
-    CREATE DATABASE IF NOT EXISTS {{ .Values.database.name }};
-    USE {{ .Values.database.name }};
+    CREATE DATABASE IF NOT EXISTS {{ if .Values.database.name }}{{ .Values.database.name }}{{ else }}mydatabase{{ end }};
+    USE {{ if .Values.database.name }}{{ .Values.database.name }}{{ else }}mydatabase{{ end }};
     CREATE TABLE IF NOT EXISTS images (
         id INT AUTO_INCREMENT PRIMARY KEY,
         image_url VARCHAR(255) NOT NULL
